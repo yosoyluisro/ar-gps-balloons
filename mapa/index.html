@@ -62,6 +62,23 @@
         <button id="btn-add-point" class="btn btn-accent">📍 Global aquí</button>
         <button id="btn-cal" class="btn">🧭 Calibrar</button>
       </div>
+      <div id="drift-line" class="status-bar">Deriva: – · GPS: –</div>
+      <div id="mark-chip" class="chip hidden">
+        <span id="mark-txt">Apunta con el centro de la pantalla</span>
+        <div class="row">
+          <button id="mark-ok" class="btn btn-accent">✔ Fijar</button>
+          <button id="mark-floor" class="btn">Poner en piso</button>
+          <button id="mark-cancel" class="btn">✕</button>
+        </div>
+      </div>
+      <div id="nudge-chip" class="chip hidden">
+        <span>✋ Arrastra para ajustar</span>
+        <div class="row">
+          <button id="nudge-up" class="btn">▲</button>
+          <button id="nudge-down" class="btn">▼</button>
+          <button id="nudge-lock" class="btn btn-accent">🔒 Bloquear</button>
+        </div>
+      </div>
     </section>
 
     <div id="point-card" class="point-card hidden">
@@ -71,6 +88,7 @@
         <div class="gsub" id="pc-dist"></div>
       </div>
       <div class="row">
+        <button id="pc-nudge" class="btn">✋ Ajustar</button>
         <button id="pc-edit" class="btn">Editar</button>
         <button id="pc-del" class="btn danger">Borrar</button>
         <button id="pc-close" class="btn">Cerrar</button>

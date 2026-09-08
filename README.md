@@ -56,13 +56,17 @@ URL: `https://yosoyluisro.github.io/air-draw/mapa/`
    - `🛰️ Demo GPS` simula tu posición (útil para probar sin salir).
    - `⤓ / ⤒` exporta/importa respaldo JSON.
 2. **RA** (`▶ Comenzar RA`): camina; los globos flotan en su sitio real (etiquetas + varilla al suelo que marca la altura). Tocar un globo muestra su nota y distancia. `🧭 Calibrar` alinea la rotación con la brújula (`Alinear con brújula`, `±1°`) y permite fijar el origen en tu posición.
+   - **Marcar un globo "clavado"** (`📍 Global aquí`): aparecen una retícula y el botón `✔ Fijar`. Apunta con el **centro de la pantalla** al lugar exacto (el mundo se ancla a la superficie real detectada por la cámara) y pulsa Fijar. Si no se detecta superficie, pulsa `Poner en piso`.
+   - **Ajuste fino** (`✋ Ajustar` en la tarjeta de un globo): arrastra el globo sobre el piso para dejarlo exactamente en su sitio y pulsa `🔒 Bloquear`. Los botones ▲/▼ cambian su altura.
+   - **Anti-deriva automática**: al estar quieto (≥2 s con GPS de precisión ≤8 m) la app mide y corrige la deriva del mundo en pasos pequeños. La línea del HUD muestra `Deriva` en metros mientras camina y corrige.
 
 ## Precisión (honestidad técnica)
 
 - Horizontales: GPS `±3–15 m`; con calibración de rumbo `~2–5 m`.
-- Vertical (altitud): GPS/barómetro `±2–8 m`; por globo puedes corregirla a mano en el editor.
-- Exactitud al centímetro gratis en Android+iOS no existe: requiere ARCore Geospatial (solo Android) o marcadores físicos (QR).
+- Vertical (altitud): GPS/barómetro `±2–8 m`; por globo puedes corregirla a mano con el editor o con ▲/▼ en RA.
+- **Dentro de una misma sesión AR**, los globos marcados con `Fijar` quedan **clavados** al punto real (anclaje por SLAM ARCore/ARKit, precisión de centímetros mientras no camines cientos de metros). En caminatas largas el SLAM deriva unos metros; la corrección automática (GPS + quieto) y el ajuste manual `✋ Ajustar` lo compensan al detenerte.
+- Entre días no existe posición absoluta al centímetro gratis (requeriría ARCore Geospatial, solo Android, o marcadores físicos/QR): al volver, los globos se ubican por GPS (escala ±5–15 m) y se corrigen con `Fijar`/`Ajustar` en segundos.
 
 ## Datos
 
-Guardados en `localStorage` (`airmap.v1`): globos con `{id, name, lat, lng, alt, icon, color, note}` y rutas con `{id, name, color, pointIds[]}`. Los globos preservan su posición entre días porque se guardan sus coordenadas geográficas reales, no las relativas a una sesión.
+Guardados en `localStorage` (`airmap.v1`): globos con `{id, name, lat, lng, alt, icon, color, note}` y rutas con `{id, name, color, pointIds[]}`. Los globos preservan su posición entre días porque se guardan sus coordenadas geográficas reales, no las relativas a una sesión. Cada globo marcado en RA guarda además `rel: {x,y,z}` (posición relativa de la sesión, refuerzos: más certera) y `src` (`hit` al marcar con retícula, `cal` al ajustar a mano); usa geográficas para abrir el globo en días posteriores.

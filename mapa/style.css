@@ -141,6 +141,20 @@ html, body {
   text-align: center;
 }
 
+.chip {
+  margin-top: 8px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(4,5,13,0.72);
+  border: 1px solid var(--line);
+  backdrop-filter: blur(10px);
+  font-size: 12.5px;
+  text-align: center;
+}
+
+.chip .row { margin-top: 8px; }
+.chip .btn { min-height: 38px; font-size: 12.5px; max-width: none; flex: 1; }
+
 .picons { display: flex; align-items: center; justify-content: center; gap: 10px; font-weight: 800; font-size: 17px; }
 .picons span:first-child { font-size: 26px; }
 
