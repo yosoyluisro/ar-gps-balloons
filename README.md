@@ -38,3 +38,31 @@ Copia la URL `https://xxx.trycloudflare.com` que imprime y ábrela en el celular
 En `localStorage` de tu navegador (clave `airdraw.v1`), como coordenadas mundiales `[x, y, z]` de cada trazo. Se pierden si borras datos del navegador → usa Exportar para respaldar.
 
 Nota: el AR ancla los dibujos al punto donde iniciaste la sesión (`local` reference space). Para que la galería quede fija en el mismo lugar, inicia la sesión parado en el mismo punto.
+
+---
+
+# 🗺️ Nivel 2 — Mapa Campus AR (`mapa/`)
+
+Mapa interactivo con Realidad Aumentada: en vez de dibujar, dejas **globos de ubicación** (waypoints con nombre, icono, color y altitud) en **coordenadas GPS reales**, los conectas en **rutas** (trazadas tocando los globos en orden) y al volver los encuentras en su sitio con RA, incluyendo subidas y bajadas.
+
+URL: `https://yosoyluisro.github.io/air-draw/mapa/`
+
+## Cómo se usa
+
+1. **Mapa 2D** (edita sin salir): ves todo el campus, arrastra para mover, rueda para zoom.
+   - `➕ Global` → toca el mapa (o "toca el globo" en tu ubicación con `📍 Global aquí` en RA) para crear un globo; se abre el editor (nombre, nota, color, icono, altitud).
+   - `🧭 Rutas` → `Nueva` → toca los globos en orden → `Finalizar` y ponle nombre.
+   - `◉ Origen` fija el punto base (con GPS o centro de la vista).
+   - `🛰️ Demo GPS` simula tu posición (útil para probar sin salir).
+   - `⤓ / ⤒` exporta/importa respaldo JSON.
+2. **RA** (`▶ Comenzar RA`): camina; los globos flotan en su sitio real (etiquetas + varilla al suelo que marca la altura). Tocar un globo muestra su nota y distancia. `🧭 Calibrar` alinea la rotación con la brújula (`Alinear con brújula`, `±1°`) y permite fijar el origen en tu posición.
+
+## Precisión (honestidad técnica)
+
+- Horizontales: GPS `±3–15 m`; con calibración de rumbo `~2–5 m`.
+- Vertical (altitud): GPS/barómetro `±2–8 m`; por globo puedes corregirla a mano en el editor.
+- Exactitud al centímetro gratis en Android+iOS no existe: requiere ARCore Geospatial (solo Android) o marcadores físicos (QR).
+
+## Datos
+
+Guardados en `localStorage` (`airmap.v1`): globos con `{id, name, lat, lng, alt, icon, color, note}` y rutas con `{id, name, color, pointIds[]}`. Los globos preservan su posición entre días porque se guardan sus coordenadas geográficas reales, no las relativas a una sesión.
