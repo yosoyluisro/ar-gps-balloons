@@ -43,30 +43,25 @@ Nota: el AR ancla los dibujos al punto donde iniciaste la sesión (`local` refer
 
 # 🗺️ Nivel 2 — Mapa Campus AR (`mapa/`)
 
-Mapa interactivo con Realidad Aumentada: en vez de dibujar, dejas **globos de ubicación** (waypoints con nombre, icono, color y altitud) en **coordenadas GPS reales**, los conectas en **rutas** (trazadas tocando los globos en orden) y al volver los encuentras en su sitio con RA, incluyendo subidas y bajadas.
+Realidad Aumentada pura: dejas **globos de ubicación** (puntos flotantes con nombre, icono, color y altura) **clavados al mundo real** con la cámara. **Sin GPS, sin mapa 2D, sin rutas**: el mundo no se mueve nunca solo, cada globo queda pegado a la superficie que apuntes con el centro de la pantalla (SLAM ARCore/ARKit).
 
 URL: `https://yosoyluisro.github.io/air-draw/mapa/`
 
 ## Cómo se usa
 
-1. **Mapa 2D** (edita sin salir): ves todo el campus, arrastra para mover, rueda para zoom.
-   - `➕ Global` → toca el mapa (o "toca el globo" en tu ubicación con `📍 Global aquí` en RA) para crear un globo; se abre el editor (nombre, nota, color, icono, altitud).
-   - `🧭 Rutas` → `Nueva` → toca los globos en orden → `Finalizar` y ponle nombre.
-   - `◉ Origen` fija el punto base (con GPS o centro de la vista).
-   - `🛰️ Demo GPS` simula tu posición (útil para probar sin salir).
-   - `⤓ / ⤒` exporta/importa respaldo JSON.
-2. **RA** (`▶ Comenzar RA`): camina; los globos flotan en su sitio real (etiquetas + varilla al suelo que marca la altura). Tocar un globo muestra su nota y distancia. `🧭 Calibrar` alinea la rotación con la brújula (`Alinear con brújula`, `±1°`) y permite fijar el origen en tu posición.
-   - **Marcar un globo "clavado"** (`📍 Global aquí`): aparecen una retícula y el botón `✔ Fijar`. Apunta con el **centro de la pantalla** al lugar exacto (el mundo se ancla a la superficie real detectada por la cámara) y pulsa Fijar. Si no se detecta superficie, pulsa `Poner en piso`.
-   - **Ajuste fino** (`✋ Ajustar` en la tarjeta de un globo): arrastra el globo sobre el piso para dejarlo exactamente en su sitio y pulsa `🔒 Bloquear`. Los botones ▲/▼ cambian su altura.
-   - **Anti-deriva automática**: al estar quieto (≥2 s con GPS de precisión ≤8 m) la app mide y corrige la deriva del mundo en pasos pequeños. La línea del HUD muestra `Deriva` en metros mientras camina y corrige.
+1. **🅿📷 Iniciar RA**: se abre la cámara. Cada vez que entras la escena la sesión comienza con el origen en el punto donde estás parado.
+2. **📍 Punto aquí** → aparece una retícula en el centro. Apunta al lugar exacto y pulsa **✔ Fijar** (o **Poner en piso** si no detecta superficie) → se abre el editor (nombre, nota, color, icono, altura). El globo queda **clavado** a ese punto real.
+3. **Toca un globo** → tarjeta:
+   - **✋ Ajustar**: arrastra el globo sobre el piso para dejarlo exacto y pulsa **🔒 Fijar**; ▲/▼ cambian su altura.
+   - **◉ Anclar aquí** (recuperar posición entre días): apunta con la retícula al lugar físico donde debe estar ese globo y pulsa **✔ Fijar** → todos los puntos se trasladan con esa referencia. Usa **⟲ −1°/ +1° ⟳** en ese modal para afinar la orientación si hace falta.
+   - **Editar** / **Borrar**.
+4. **⤓ / ⤒** exporta/importa la escena (respaldo JSON).
 
 ## Precisión (honestidad técnica)
 
-- Horizontales: GPS `±3–15 m`; con calibración de rumbo `~2–5 m`.
-- Vertical (altitud): GPS/barómetro `±2–8 m`; por globo puedes corregirla a mano con el editor o con ▲/▼ en RA.
-- **Dentro de una misma sesión AR**, los globos marcados con `Fijar` quedan **clavados** al punto real (anclaje por SLAM ARCore/ARKit, precisión de centímetros mientras no camines cientos de metros). En caminatas largas el SLAM deriva unos metros; la corrección automática (GPS + quieto) y el ajuste manual `✋ Ajustar` lo compensan al detenerte.
-- Entre días no existe posición absoluta al centímetro gratis (requeriría ARCore Geospatial, solo Android, o marcadores físicos/QR): al volver, los globos se ubican por GPS (escala ±5–15 m) y se corrigen con `Fijar`/`Ajustar` en segundos.
+- **Dentro de una sesión**: los globos quedan clavados a la superficie real con precisión de centímetros (anclaje por SLAM). Si el SLAM deriva en caminatas largas, el ajuste manual `✋ Ajustar` lo corrige en segundos.
+- **Entre días** no existe posición absoluta gratis (requeriría ARCore Geospatial o marcadores físicos/QR): **empieza la sesión parado en el mismo sitio** y los globos reaparecen donde los dejaste; si no, **◉ Anclar aquí** los re-coloca con un solo gesto.
 
 ## Datos
 
-Guardados en `localStorage` (`airmap.v1`): globos con `{id, name, lat, lng, alt, icon, color, note}` y rutas con `{id, name, color, pointIds[]}`. Los globos preservan su posición entre días porque se guardan sus coordenadas geográficas reales, no las relativas a una sesión. Cada globo marcado en RA guarda además `rel: {x,y,z}` (posición relativa de la sesión, refuerzos: más certera) y `src` (`hit` al marcar con retícula, `cal` al ajustar a mano); usa geográficas para abrir el globo en días posteriores.
+Guardados en `localStorage` (`airmap.v1`): globos con `{id, name, note, icon, color, alt, rel:{x,y,z}}`. `rel` es la posición flotante **relativa al origen de la sesión** — nunca hay coordenadas GPS. Punto donde apuntes, el globo queda.
