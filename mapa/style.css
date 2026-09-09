@@ -58,6 +58,20 @@ html, body {
 
 .hud-top h1 { font-size: 15px; font-weight: 700; }
 
+#aim-dot {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 12;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid rgba(41, 255, 240, 0.95);
+  box-shadow: 0 0 14px rgba(41, 255, 240, 0.8), inset 0 0 6px rgba(41, 255, 240, 0.6);
+  pointer-events: none;
+}
+
 .panel {
   width: calc(100% - 24px);
   max-width: 560px;

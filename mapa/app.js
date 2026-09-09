@@ -1,8 +1,8 @@
 import * as THREE from 'three';
 import { ARButton } from 'three/addons/webxr/ARButton.js';
 
-const LS = 'airmap.v1';
-const FLOAT_H = 1.35;
+const LS = 'airmap.v2';
+const PLACE_DIST = 2.0;
 const ICONS = ['📍','🏛️','📚','🍽️','🥤','🏕️','⚽','🚻','🚗','🚲','🅿️','🔧','💡','🛗','🚑','❤️','🌟','⚠️'];
 const PALETTE = ['#ff5757','#ff914d','#ffd166','#b0e57c','#29fff0','#4dc3ff','#7d7dff','#ff2ef0','#ffffff'];
 const IGNORED = ['button','input','select','textarea','.panel','.modal','.point-card','.toast'];
@@ -44,26 +44,12 @@ scene.add(pivot);
 const raycaster = new THREE.Raycaster();
 const bubbleSprites = [];
 
-const reticle = new THREE.Group();
-const retGeo = new THREE.RingGeometry(0.07, 0.11, 36);
-const retMat = new THREE.MeshBasicMaterial({ color: 0x29fff0, transparent: true, opacity: 0.9, side: THREE.DoubleSide });
-const retMesh = new THREE.Mesh(retGeo, retMat);
-reticle.add(retMesh);
-reticle.visible = false;
-scene.add(reticle);
-
 let arOn = false;
 let enterARButton = null;
-let arReady = false;
 
 let marking = false;
 let markMode = 'place';
 let anchorId = null;
-let lastHitMatrix = null;
-let lastHitLocal = null;
-let hitSource = null;
-let viewerSpace = null;
-let refSpace = null;
 
 let nudge = null;
 let nudgeDrag = false;
@@ -163,24 +149,18 @@ function addBubble(p) {
   const rel = p.rel;
   const iconTex = buildBubbleTexture(p);
   const spr = new THREE.Sprite(new THREE.SpriteMaterial({ map: iconTex, transparent: true, depthTest: true, depthWrite: false }));
-  spr.position.set(rel.x, rel.y + FLOAT_H, rel.z);
+  spr.position.set(rel.x, rel.y, rel.z);
   spr.scale.set(0.6, 0.48, 1);
   spr.userData.pointId = p.id;
   pivot.add(spr);
   bubbleSprites.push(spr);
 
   const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: buildGlowTexture(), transparent: true, depthWrite: false }));
-  glow.position.set(rel.x, rel.y + 0.08, rel.z);
-  glow.scale.set(0.28, 0.28, 1);
+  glow.position.set(rel.x, rel.y, rel.z);
+  glow.scale.set(0.42, 0.42, 1);
   pivot.add(glow);
 
-  const pts = [rel.x, rel.y, rel.z, rel.x, rel.y + FLOAT_H * 0.78, rel.z];
-  const staffGeo = new THREE.BufferGeometry();
-  staffGeo.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
-  const staff = new THREE.Line(staffGeo, new THREE.LineBasicMaterial({ color: 0x29fff0, transparent: true, opacity: 0.55 }));
-  pivot.add(staff);
-
-  pointRefs.set(p.id, { spr, glow, staff });
+  pointRefs.set(p.id, { spr, glow });
 }
 
 function rebuildWorld() {
@@ -195,22 +175,25 @@ function updateStatus() {
   statusBar.textContent = 'Puntos: ' + state.points.length + ' · toca un globo para ver opciones';
 }
 
+function showAim() {
+  $('aim-dot').classList.remove('hidden');
+}
+
+function hideAim() {
+  $('aim-dot').classList.add('hidden');
+}
+
 function onSessionStart() {
   arOn = true;
   overlayStart.classList.add('hidden');
-  hitSource = null;
-  viewerSpace = null;
-  refSpace = null;
-  lastHitMatrix = null;
-  lastHitLocal = null;
   marking = false;
   markChip.classList.add('hidden');
+  hideAim();
   nudge = null;
   nudgeDrag = false;
   nudgeChip.classList.add('hidden');
-  reticle.visible = false;
   rebuildWorld();
-  toast('Listo · apunta y Fijar');
+  toast('Listo · toca 📍 Punto aquí (o la pantalla) para dejar un globo');
 }
 
 function onSessionEnd() {
@@ -219,77 +202,38 @@ function onSessionEnd() {
   marking = false;
   nudge = null;
   nudgeDrag = false;
-  reticle.visible = false;
+  hideAim();
   markChip.classList.add('hidden');
   nudgeChip.classList.add('hidden');
   closePointCard(true);
 }
 
-async function ensureHitSource() {
-  if (hitSource) return;
-  const session = renderer.xr.getSession();
-  if (!session) return;
-  viewerSpace = await session.requestReferenceSpace('viewer');
-  refSpace = renderer.xr.getReferenceSpace();
-  hitSource = await session.requestHitTestSource({ space: viewerSpace });
-}
-
-function captureHit(frame) {
-  if (!hitSource || !frame) {
-    lastHitMatrix = null;
-    lastHitLocal = null;
-    return;
-  }
-  const hits = frame.getHitTestResults(hitSource);
-  if (!hits || !hits.length) {
-    lastHitMatrix = null;
-    lastHitLocal = null;
-    return;
-  }
-  const pose = hits[0].getPose(refSpace);
-  if (!pose) {
-    lastHitMatrix = null;
-    lastHitLocal = null;
-    return;
-  }
-  lastHitMatrix = pose.transform.matrix;
-  pivot.matrixAutoUpdate = false;
-  pivot.updateMatrixWorld();
-  const tmp = new THREE.Vector3().setFromMatrixPosition(new THREE.Matrix4().fromArray(pose.transform.matrix));
-  lastHitLocal = pivot.worldToLocal(tmp.clone());
-  pivot.matrixAutoUpdate = true;
-}
-
-function updateReticle() {
-  if (lastHitMatrix) {
-    reticle.matrix.fromArray(lastHitMatrix);
-    reticle.matrixAutoUpdate = false;
-    reticle.visible = true;
-    markTxt.textContent = markMode === 'anchor'
-      ? 'Anclando: apunta al lugar real y Fijar'
-      : 'Planos: ✔ · pulsa Fijar';
-  } else {
-    reticle.visible = false;
-    markTxt.textContent = markMode === 'anchor'
-      ? 'Sin superficie: apunta al suelo o Poner en piso'
-      : 'Sin superficie… apunta al suelo o Poner en piso';
-  }
+function aimPoint() {
+  const pos = new THREE.Vector3();
+  const dir = new THREE.Vector3();
+  camera.getWorldPosition(pos);
+  camera.getWorldDirection(dir);
+  return {
+    x: pos.x + dir.x * PLACE_DIST,
+    y: pos.y + dir.y * PLACE_DIST,
+    z: pos.z + dir.z * PLACE_DIST
+  };
 }
 
 function addMark(mode) {
   if (!arOn) return toast('Entra a Realidad Aumentada');
   marking = true;
   markMode = mode || 'place';
-  lastHitMatrix = null;
-  lastHitLocal = null;
-  reticle.visible = false;
+  showAim();
   markChip.classList.remove('hidden');
-  updateReticle();
+  markTxt.textContent = markMode === 'anchor'
+    ? 'Apuntando… toca la pantalla (o ✔) para anclar el punto real aquí'
+    : 'Apuntando… toca la pantalla (o ✔) para dejar el globo aquí';
 }
 
 function cancelMark() {
   marking = false;
-  reticle.visible = false;
+  hideAim();
   markChip.classList.add('hidden');
 }
 
@@ -303,10 +247,6 @@ function rayFloorAt(ndc, y) {
   const local = pivot.worldToLocal(out.clone());
   pivot.matrixAutoUpdate = true;
   return local;
-}
-
-function hitScenePos() {
-  return lastHitLocal;
 }
 
 function applyAnchorAt(scenePos) {
@@ -344,12 +284,9 @@ function rotateScene(deg) {
   rebuildWorld();
 }
 
-function lockMark(mode) {
-  if (!arOn) return;
-  const scenePos = mode === 'floor' ? rayFloorAt({ x: 0, y: 0 }, 0) : hitScenePos();
-  if (!scenePos) {
-    return toast(mode === 'floor' ? 'Apunta al suelo' : 'Sin superficie detectada: apunta a un plano o usa Poner en piso');
-  }
+function lockMark() {
+  if (!arOn) return toast('Entra a Realidad Aumentada');
+  const scenePos = aimPoint();
   if (markMode === 'anchor') {
     applyAnchorAt(scenePos);
     return;
@@ -379,7 +316,7 @@ function enterNudge(p) {
   nudgeGroundY = p.rel.y;
   closePointCard(true);
   nudgeChip.classList.remove('hidden');
-  toast('✋ Arrastra sobre el piso · 🔒 Fijar');
+  toast('✋ Arrastra para ajustar · 🔒 Fijar');
 }
 
 function nudgeMove(e) {
@@ -388,12 +325,8 @@ function nudgeMove(e) {
   const hit = rayFloorAt(ndc, nudgeGroundY);
   if (!hit) return;
   nudge.rel = { x: hit.x, y: nudgeGroundY, z: hit.z };
-  nudgeRefs.spr.position.set(hit.x, nudgeGroundY + FLOAT_H, hit.z);
-  nudgeRefs.glow.position.set(hit.x, nudgeGroundY + 0.08, hit.z);
-  const pos = nudgeRefs.staff.geometry.attributes.position.array;
-  pos[0] = hit.x; pos[1] = nudgeGroundY; pos[2] = hit.z;
-  pos[3] = hit.x; pos[4] = nudgeGroundY + FLOAT_H * 0.78; pos[5] = hit.z;
-  nudgeRefs.staff.geometry.attributes.position.needsUpdate = true;
+  nudgeRefs.spr.position.set(hit.x, nudgeGroundY, hit.z);
+  nudgeRefs.glow.position.set(hit.x, nudgeGroundY, hit.z);
 }
 
 function nudgeAlt(d) {
@@ -402,9 +335,6 @@ function nudgeAlt(d) {
   nudgeGroundY += d;
   nudgeRefs.spr.position.y += d;
   nudgeRefs.glow.position.y += d;
-  const pos = nudgeRefs.staff.geometry.attributes.position.array;
-  pos[1] += d; pos[4] += d;
-  nudgeRefs.staff.geometry.attributes.position.needsUpdate = true;
   toast('Altura: ' + nudge.rel.y.toFixed(1) + ' m');
 }
 
@@ -465,7 +395,10 @@ function handlePointerDown(e) {
     nudgeMove(evCoords(e));
     return;
   }
-  if (marking) return;
+  if (marking) {
+    lockMark();
+    return;
+  }
   tapAR(evCoords(e));
 }
 
@@ -539,8 +472,8 @@ function commitPointModal() {
 
 function initAR() {
   enterARButton = ARButton.createButton(renderer, {
-    requiredFeatures: ['hit-test'],
-    optionalFeatures: ['local-floor', 'dom-overlay'],
+    requiredFeatures: ['local-floor'],
+    optionalFeatures: ['dom-overlay'],
     domOverlay: { root: $('hud') }
   });
   $('enter-ar').appendChild(enterARButton);
@@ -597,8 +530,7 @@ $('btn-add-point').addEventListener('click', () => {
   else addMark('place');
 });
 
-$('mark-ok').addEventListener('click', () => lockMark('center'));
-$('mark-floor').addEventListener('click', () => lockMark('floor'));
+$('mark-ok').addEventListener('click', lockMark);
 $('mark-cancel').addEventListener('click', cancelMark);
 
 $('nudge-up').addEventListener('click', () => nudgeAlt(0.25));
@@ -647,6 +579,15 @@ $('import-file').addEventListener('change', e => {
   if (f) importScene(f);
 });
 
+$('btn-clear').addEventListener('click', () => {
+  if (!state.points.length) return toast('No hay puntos');
+  if (!confirm('¿Borrar todos los puntos?')) return;
+  state.points = [];
+  save();
+  rebuildWorld();
+  toast('🗑️ Todos los puntos borrados');
+});
+
 window.addEventListener('pointerdown', handlePointerDown);
 window.addEventListener('pointermove', handlePointerMove);
 window.addEventListener('pointerup', handlePointerUp);
@@ -658,11 +599,8 @@ window.addEventListener('resize', () => {
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
 
-renderer.setAnimationLoop((timestamp, frame) => {
+renderer.setAnimationLoop(() => {
   if (!renderer.xr.isPresenting) return;
-  ensureHitSource(frame).catch(() => {});
-  captureHit(frame);
-  if (marking) updateReticle();
   renderer.render(scene, camera);
 });
 

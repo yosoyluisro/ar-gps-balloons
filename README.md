@@ -43,25 +43,25 @@ Nota: el AR ancla los dibujos al punto donde iniciaste la sesión (`local` refer
 
 # 🗺️ Nivel 2 — Mapa Campus AR (`mapa/`)
 
-Realidad Aumentada pura: dejas **globos de ubicación** (puntos flotantes con nombre, icono, color y altura) **clavados al mundo real** con la cámara. **Sin GPS, sin mapa 2D, sin rutas**: el mundo no se mueve nunca solo, cada globo queda pegado a la superficie que apuntes con el centro de la pantalla (SLAM ARCore/ARKit).
+Realidad Aumentada pura: dejas **globos de ubicación** (puntos flotantes con nombre, icono, color y altura) **100% estáticos** con la cámara. **Sin GPS, sin mapa 2D, sin rutas y sin detectar superficies**: el globo queda clavado a 2 m hacia donde mires en el momento del toque (posición de la cámara del WebXR, no se mide el entorno).
 
 URL: `https://yosoyluisro.github.io/air-draw/mapa/`
 
 ## Cómo se usa
 
-1. **🅿📷 Iniciar RA**: se abre la cámara. Cada vez que entras la escena la sesión comienza con el origen en el punto donde estás parado.
-2. **📍 Punto aquí** → aparece una retícula en el centro. Apunta al lugar exacto y pulsa **✔ Fijar** (o **Poner en piso** si no detecta superficie) → se abre el editor (nombre, nota, color, icono, altura). El globo queda **clavado** a ese punto real.
+1. **📷 Iniciar RA**: se abre la cámara. Cada sesión comienza con el origen en el punto donde estás parado (espacio `local-floor`).
+2. **Agregar globo**: toca la pantalla donde quieras que flote (aparece el punto de mira en el centro; el globo se deja a 2 m en esa dirección) o pulsa **📍 Punto aquí** → **✔ Fijar**. Luego el editor (nombre, nota, color, icono, altura). El globo queda **fijo** en el aire, no usa el entorno.
 3. **Toca un globo** → tarjeta:
-   - **✋ Ajustar**: arrastra el globo sobre el piso para dejarlo exacto y pulsa **🔒 Fijar**; ▲/▼ cambian su altura.
-   - **◉ Anclar aquí** (recuperar posición entre días): apunta con la retícula al lugar físico donde debe estar ese globo y pulsa **✔ Fijar** → todos los puntos se trasladan con esa referencia. Usa **⟲ −1°/ +1° ⟳** en ese modal para afinar la orientación si hace falta.
+   - **✋ Ajustar**: arrastra el globo en el plano horizontal para dejarlo exacto y pulsa **🔒 Fijar**; ▲/▼ cambian su altura.
+   - **◉ Anclar aquí** (si al volver no coincide con el lugar real): apunta hacia donde debe estar y pulsa **✔ Fijar** (o toca la pantalla) → todos los globos se trasladan con esa referencia. Usa **⟲ −1°/ +1° ⟳** para afinar la orientación.
    - **Editar** / **Borrar**.
-4. **⤓ / ⤒** exporta/importa la escena (respaldo JSON).
+4. **🗑️** borra todos los globos. **⤓ / ⤒** exporta/importa la escena (respaldo JSON).
 
 ## Precisión (honestidad técnica)
 
-- **Dentro de una sesión**: los globos quedan clavados a la superficie real con precisión de centímetros (anclaje por SLAM). Si el SLAM deriva en caminatas largas, el ajuste manual `✋ Ajustar` lo corrige en segundos.
-- **Entre días** no existe posición absoluta gratis (requeriría ARCore Geospatial o marcadores físicos/QR): **empieza la sesión parado en el mismo sitio** y los globos reaparecen donde los dejaste; si no, **◉ Anclar aquí** los re-coloca con un solo gesto.
+- Los globos son **poses de cámara**: quedan clavados a la posición donde la cámara estaba al tocar (más 2 m de distancia de reposo) y **nunca se mueven solos** dentro de la sesión (SLAM solo estabiliza la escena). En caminatas largas, si el SLAM deriva, ajusta con `✋ Ajustar`.
+- **Entre días** no existe posición absoluta gratis (requeriría ARCore Geospatial o marcadores físicos/QR): **empieza la sesión parado en el mismo sitio** y los globos reaparecen donde los dejaste; si no, **◉ Anclar aquí** los recoloca con un gesto.
 
 ## Datos
 
-Guardados en `localStorage` (`airmap.v1`): globos con `{id, name, note, icon, color, alt, rel:{x,y,z}}`. `rel` es la posición flotante **relativa al origen de la sesión** — nunca hay coordenadas GPS. Punto donde apuntes, el globo queda.
+Guardados en `localStorage` (`airmap.v2`): globos con `{id, name, note, icon, color, alt, rel:{x,y,z}}`. `rel` es la posición flotante **relativa al origen de la sesión** — nunca hay coordenadas GPS ni posiciones de superficie.
