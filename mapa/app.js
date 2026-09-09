@@ -225,17 +225,13 @@ function onSessionEnd() {
   closePointCard(true);
 }
 
-async function ensureHitSource(frame) {
-  if (hitSource && viewerSpace && refSpace) return hitSource;
+async function ensureHitSource() {
+  if (hitSource) return;
   const session = renderer.xr.getSession();
-  if (!session) return null;
-  const ref = (await session.requestReferenceSpace('viewer')).baseReferenceSpace;
-  const ht = await session.requestHitTestSource({ space: ref });
-  hitSource = ht;
-  viewerSpace = ref;
-  refSpace = (await session.requestReferenceSpace('local-floor')).baseReferenceSpace;
-  arReady = true;
-  return ht;
+  if (!session) return;
+  viewerSpace = await session.requestReferenceSpace('viewer');
+  refSpace = renderer.xr.getReferenceSpace();
+  hitSource = await session.requestHitTestSource({ space: viewerSpace });
 }
 
 function captureHit(frame) {
@@ -545,7 +541,7 @@ function initAR() {
   enterARButton = ARButton.createButton(renderer, {
     requiredFeatures: ['hit-test'],
     optionalFeatures: ['local-floor', 'dom-overlay'],
-    domOverlayRoot: document.getElementById('hud')
+    domOverlay: { root: $('hud') }
   });
   $('enter-ar').appendChild(enterARButton);
 
@@ -651,10 +647,10 @@ $('import-file').addEventListener('change', e => {
   if (f) importScene(f);
 });
 
-sceneCanvas.addEventListener('pointerdown', handlePointerDown);
-sceneCanvas.addEventListener('pointermove', handlePointerMove);
-sceneCanvas.addEventListener('pointerup', handlePointerUp);
-sceneCanvas.addEventListener('pointercancel', handlePointerUp);
+window.addEventListener('pointerdown', handlePointerDown);
+window.addEventListener('pointermove', handlePointerMove);
+window.addEventListener('pointerup', handlePointerUp);
+window.addEventListener('pointercancel', handlePointerUp);
 
 window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;
