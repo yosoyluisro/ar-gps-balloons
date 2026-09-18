@@ -44,6 +44,18 @@ button { font-family: inherit; }
   text-align: center;
 }
 .logo { font-size: 48px; line-height: 1; margin-bottom: 10px; }
+.badge {
+  display: inline-block;
+  margin-bottom: 14px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: var(--grad);
+  color: #001018;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+}
 .card h1 { font-size: 22px; margin-bottom: 6px; }
 .card p { color: var(--dim); font-size: 14px; line-height: 1.45; margin-bottom: 12px; }
 .status { color: var(--dim); font-size: 12px; margin-top: 12px; }
