@@ -43,6 +43,7 @@ function ringTexture() {
 }
 
 const ballTex = orbTexture();
+const balls = [];
 
 function aimPoint(dist) {
   const dir = new THREE.Vector3();
@@ -50,12 +51,24 @@ function aimPoint(dist) {
   return camera.position.clone().add(dir.multiplyScalar(dist));
 }
 
-function placeBalloon() {
+function placeBalloon(e) {
   const ball = new THREE.Sprite(new THREE.SpriteMaterial({ map: ballTex, transparent: true, depthTest: true, depthWrite: false }));
   ball.position.copy(aimPoint(PLACE_DIST));
   ball.scale.set(0.35, 0.35, 1);
   scene.add(ball);
+  const item = { sprite: ball, anchor: null };
+  balls.push(item);
   balloons++;
+
+  const frame = renderer.xr.getFrame() || e.frame;
+  if (frame && frame.createAnchor && renderer.xr.getReferenceSpace()) {
+    frame.createAnchor(
+      new XRRigidTransform({ x: ball.position.x, y: ball.position.y, z: ball.position.z }, { x: 0, y: 0, z: 0, w: 1 }),
+      renderer.xr.getReferenceSpace()
+    ).then((anchor) => {
+      item.anchor = anchor;
+    }).catch(() => {});
+  }
 }
 
 const reticle = new THREE.Sprite(new THREE.SpriteMaterial({ map: ringTexture(), transparent: true, depthTest: false, depthWrite: false }));
@@ -64,6 +77,7 @@ reticle.scale.set(0.28, 0.28, 1);
 function onSessionStart() {
   scene.clear();
   scene.add(reticle);
+  balls.length = 0;
   balloons = 0;
   countEl.textContent = '';
   startEl.classList.add('hidden');
@@ -78,9 +92,20 @@ function onSessionEnd() {
 renderer.xr.addEventListener('sessionstart', onSessionStart);
 renderer.xr.addEventListener('sessionend', onSessionEnd);
 
-renderer.setAnimationLoop(() => {
+renderer.setAnimationLoop((time, frame) => {
   if (!renderer.xr.isPresenting) return;
   reticle.position.copy(aimPoint(PLACE_DIST));
+  if (frame && renderer.xr.getReferenceSpace()) {
+    const ref = renderer.xr.getReferenceSpace();
+    for (const item of balls) {
+      if (!item.anchor || !frame.trackedAnchors || !frame.trackedAnchors.has(item.anchor)) continue;
+      const pose = frame.getPose(item.anchor.anchorSpace, ref);
+      if (pose) {
+        const t = pose.transform.position;
+        item.sprite.position.set(t.x, t.y, t.z);
+      }
+    }
+  }
   renderer.render(scene, camera);
 });
 
@@ -90,7 +115,7 @@ window.addEventListener('resize', () => {
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
 
-const enterBtn = ARButton.createButton(renderer, { requiredFeatures: [] });
+const enterBtn = ARButton.createButton(renderer, { optionalFeatures: ['anchors'] });
 document.getElementById('enter-ar').appendChild(enterBtn);
 
 function neutralButton(ok, label) {
