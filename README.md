@@ -1,15 +1,21 @@
-# ✒️ Dibuja en el Aire — Galería AR 3D
+# 🎈 AR GPS Balloons
 
-Dibuja trazos flotantes en el aire (estilo filtro de TikTok) manteniendo el dedo presionado sobre la cámara, guárdalos y vuelve a verlos flotando en una galería de Realidad Aumentada.
+Deja **globos informativos flotando en Realidad Aumentada**, anclados a tu **posición GPS real**.
+Colocas un globo (nombre, icono, color, nota) en el lugar donde estás; al volver al mismo sitio,
+los globos aparecen donde los dejaste, en su ubicación geográfica.
 
-Archivos: `index.html`, `style.css`, `app.js` (sin dependencias locales: Three.js vía CDN).
+- **Sin cuentas, sin nube, sin API keys, sin costo**: todo queda en tu navegador y sale en un JSON de respaldo.
+- **100 % web**: Vanilla JS + Three.js (CDN) + WebXR. Nada que instalar en el celular.
+
+> ⚠️ La **precisión es la del GPS del celular (~5–10 m)** y la alineación con la brújula se puede
+> calibrar manualmente (±1°). No se usa ARCore Geospatial: esto es una app **gratuita**, no de
+> posicionamiento milimétrico. Detalles en `REQUERIMIENTOS.md`.
 
 ## Requisitos del celular
 
-- **Android**: Chrome reciente con **ARCore** instalado.
+- **Android**: Chrome reciente + **ARCore** instalado.
 - **iPhone**: Safari 17+ con ARKit.
-
-El modo AR (**WebXR**) solo funciona por **HTTPS**.
+- WebXR (AR) solo funciona por **HTTPS** y necesita **señal GPS**.
 
 ## Arrancar el servidor
 
@@ -19,49 +25,48 @@ En PowerShell, dentro de esta carpeta:
 .\servir.ps1 -Tunnel
 ```
 
-Copia la URL `https://xxx.trycloudflare.com` que imprime y ábrela en el celular. No hace falta instalar nada en el teléfono: es un túnel HTTPS público hacia tu PC.
+Copia la URL `https://xxx.trycloudflare.com` que imprime y ábrela en el celular.
+Es un túnel HTTPS público hacia tu PC; no hay que instalar nada en el teléfono.
 
-> Opción local (misma red WiFi, sin Cloudflare): `.\servir.ps1` sirve `http://<IP>:8080`. Sirve solo para ver el modo **3D (escritorio)**, no el AR con cámara (requiere HTTPS).
+> Opción local (misma red WiFi, sin Cloudflare): `.\servir.ps1` sirve `http://<IP>:8080`.
+> Solo útil para desarrollo, no para AR (requiere HTTPS).
 
 ## Cómo usar
 
-1. **Comenzar AR**: botón "▶ Comenzar Realidad Aumentada". Permite el permiso de cámara.
-2. **Dibujar**: toca y mantén el dedo; mueve el dedo para trazar en el aire. Al soltar se cierra el trazo.
-3. **Paleta**: cambia el color antes de cada trazo.
-4. **Guardar**: 💾 Guardar → nombre → aparece en la galería.
-5. **Galería**: botón 🖼 → cada tarjeta con "Ver en AR" (posiciona ese dibujo o los todos frente a ti y camina alrededor) y "Eliminar".
-6. En escritorio: "Probar en 3D" permite orbitar y dibujar con mouse (rueda = profundidad, botón ✏️ ON/OFF).
-7. **Respaldo**: ⤓ exporta `dibujos_aire.json`, ⤒ importa.
+1. **▶ Comenzar Realidad Aumentada** → se piden permisos de cámara y de ubicación.
+   El origen del mundo queda anclado a tu **GPS actual**.
+2. **📍 Dejar globo aquí** (o toca la pantalla) → escribe el nombre → el globo queda fijado
+   a tu posición GPS, flotando a 1.6 m.
+3. **⟲ / ⟳** rotan el mundo ±1° para calibrar la brújula si algo no apunta bien.
+4. **⤓ / ⤒** exportan/importan tu respaldo JSON.
 
-## Dónde se guardan los dibujos
+## Estructura
 
-En `localStorage` de tu navegador (clave `airdraw.v1`), como coordenadas mundiales `[x, y, z]` de cada trazo. Se pierden si borras datos del navegador → usa Exportar para respaldar.
+```
+REQUERIMIENTOS.md   # especificación técnica y roadmap de sprints
+geo.js              # utilidades geográficas puras (haversine, deltas, rumbo)
+app.js              # lógica principal (Three.js + WebXR + GPS + brújula)
+index.html          # interfaz
+style.css           # estilos
+servir.ps1          # servidor local + túnel HTTPS
+test/geo.test.js    # tests de geo.js (Node, sin dependencias) → npm test
+```
 
-Nota: el AR ancla los dibujos al punto donde iniciaste la sesión (`local` reference space). Para que la galería quede fija en el mismo lugar, inicia la sesión parado en el mismo punto.
+## Tests
 
----
+```powershell
+npm test
+```
 
-# 🗺️ Nivel 2 — Mapa Campus AR (`mapa/`)
+## Roadmap
 
-Realidad Aumentada pura: dejas **globos de ubicación** (puntos flotantes con nombre, icono, color y altura) **100% estáticos** con la cámara. **Sin GPS, sin mapa 2D, sin rutas y sin detectar superficies**: el globo queda clavado a 2 m hacia donde mires en el momento del toque (posición de la cámara del WebXR, no se mide el entorno).
+- **Sprint 1 (hecho)**: ciclo básico — colocar globo en tu GPS actual y verlo reaparecer en AR.
+- **Sprint 2**: gestión completa — lista con editar/borrar, editor completo (nota/icono/color/altura), re-anclar origen, modo 3D escritorio.
+- **Sprint 3**: calibración de precisión y pulido.
 
-URL: `https://yosoyluisro.github.io/air-draw/mapa/`
+## Honestidad técnica
 
-## Cómo se usa
-
-1. **📷 Iniciar RA**: se abre la cámara. Cada sesión comienza con el origen en el punto donde estás parado (espacio `local-floor`).
-2. **Agregar globo**: toca la pantalla donde quieras que flote (aparece el punto de mira en el centro; el globo se deja a 2 m en esa dirección) o pulsa **📍 Punto aquí** → **✔ Fijar**. Luego el editor (nombre, nota, color, icono, altura). El globo queda **fijo** en el aire, no usa el entorno.
-3. **Toca un globo** → tarjeta:
-   - **✋ Ajustar**: arrastra el globo en el plano horizontal para dejarlo exacto y pulsa **🔒 Fijar**; ▲/▼ cambian su altura.
-   - **◉ Anclar aquí** (si al volver no coincide con el lugar real): apunta hacia donde debe estar y pulsa **✔ Fijar** (o toca la pantalla) → todos los globos se trasladan con esa referencia. Usa **⟲ −1°/ +1° ⟳** para afinar la orientación.
-   - **Editar** / **Borrar**.
-4. **🗑️** borra todos los globos. **⤓ / ⤒** exporta/importa la escena (respaldo JSON).
-
-## Precisión (honestidad técnica)
-
-- Los globos son **poses de cámara**: quedan clavados a la posición donde la cámara estaba al tocar (más 2 m de distancia de reposo) y **nunca se mueven solos** dentro de la sesión (SLAM solo estabiliza la escena). En caminatas largas, si el SLAM deriva, ajusta con `✋ Ajustar`.
-- **Entre días** no existe posición absoluta gratis (requeriría ARCore Geospatial o marcadores físicos/QR): **empieza la sesión parado en el mismo sitio** y los globos reaparecen donde los dejaste; si no, **◉ Anclar aquí** los recoloca con un gesto.
-
-## Datos
-
-Guardados en `localStorage` (`airmap.v2`): globos con `{id, name, note, icon, color, alt, rel:{x,y,z}}`. `rel` es la posición flotante **relativa al origen de la sesión** — nunca hay coordenadas GPS ni posiciones de superficie.
+- El GPS es **aproximado** (~5–10 m). Los globos son **coordenadas geográficas reales**, no poses de cámara.
+- La altitud GPS es poco fiable: los globos se muestran a altura fija sobre el origen.
+- Entre sesiones, estando en el mismo punto, los globos reaparecen donde se dejaron; si no, "Re-anclar a mi posición" (Sprint 2) los recoloca.
+- Los datos viven en `localStorage` (clave `argps.v1`): usa ⤓ para respaldar.

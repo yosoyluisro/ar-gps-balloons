@@ -1,46 +1,14 @@
 import * as THREE from 'three';
 import { ARButton } from 'three/addons/webxr/ARButton.js';
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { deltaMeters, degToRad, radToDeg } from './geo.js';
 
-const PALETTE = ['#ff2ef0', '#29fff0', '#64ff5f', '#ffe32e', '#ff7a2e', '#b78cff', '#ffffff'];
-const STROKE_MIN_DIST = 0.012;
-const STROKE_CAP = 700;
-const LS_DRAWINGS = 'airdraw.v1';
-const LS_DRAFT = 'airdraw.draft';
-const AR_DISTANCE = 1.8;
-const RING_RADIUS = 1.6;
-const RING_SPREAD = Math.PI / 3;
+const LS = 'argps.v1';
+const ALT_OFFSET = 1.6;        // altura de los globos sobre el nivel de origen (m)
+const DEFAULT_ICON = '🎈';
+const DEFAULT_COLOR = '#29fff0';
+const IGNORED = 'button,input,select,textarea,.modal,.toast,.panel,.hud-top,.status-bar,.dbg';
 
 const $ = (id) => document.getElementById(id);
-
-const hudEl = $('hud');
-const overlayStart = $('overlay-start');
-const enterARBox = $('enter-ar');
-const xrStatusEl = $('xr-status');
-const panelDraw = $('panel-draw');
-const panelGallery = $('panel-gallery');
-const galleryList = $('gallery-list');
-const modeBadge = $('mode-badge');
-const paletteEl = $('palette');
-const btnUndo = $('btn-undo');
-const btnClear = $('btn-clear');
-const btnSave = $('btn-save');
-const btnGallery = $('btn-gallery');
-const btnBack = $('btn-back');
-const btnExport = $('btn-export');
-const btnImport = $('btn-import');
-const btnViewAll = $('btn-view-all');
-const btnPreview3d = $('btn-preview3d');
-const btnDraw = $('btn-draw');
-const modal = $('modal');
-const inputName = $('input-name');
-const btnModalOk = $('btn-modal-ok');
-const btnModalCancel = $('btn-modal-cancel');
-const importFile = $('import-file');
-const toastEl = $('toast');
-const depthBox = $('depth-ui');
-const depthSlider = $('depth-slider');
-const depthVal = $('depth-val');
 
 const renderer = new THREE.WebGLRenderer({ canvas: $('scene'), antialias: true, alpha: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
@@ -49,503 +17,347 @@ renderer.setClearAlpha(0);
 renderer.xr.enabled = true;
 
 const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 50);
+const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 1000);
+const pivot = new THREE.Group();
+scene.add(pivot);
 
-const strokeGroup = new THREE.Group();
-const galleryGroup = new THREE.Group();
-scene.add(strokeGroup, galleryGroup);
+let store = loadStore();
+let balloons = store.balloons;
 
-const grid = new THREE.GridHelper(6, 24, 0x6677aa, 0x1a2030);
-grid.material.transparent = true;
-grid.material.opacity = 0.4;
-grid.position.y = -0.4;
-grid.visible = false;
-scene.add(grid);
-
-let raycaster = new THREE.Raycaster();
-let drawings = loadAll();
-let mode = 'draw';
-let drawingActive = false;
-let drawEnabled = false;
-let currentStroke = null;
-let pointerNDC = null;
-let lastPoint = null;
-let selectedColor = PALETTE[0];
-let drawDistance = AR_DISTANCE;
-let controls = null;
+let origin = null;            // { lat, lng, alt, accuracy }
+let orientation = null;       // último evento deviceorientation
+let headingNudgeDeg = store.prefs.headingNudgeDeg || 0;
+let pendingPos = null;        // posición capturada al pulsar "Dejar globo aquí"
+let arOn = false;
 let enterARButton = null;
 
-let drawing = restoreDraft();
+/* ---------------- almacenamiento ---------------- */
 
-function newDrawing() {
-  return { id: 'd' + Date.now() + '-' + Math.floor(Math.random() * 1e6), name: '', strokes: [], color: selectedColor, createdAt: Date.now() };
-}
-
-function restoreDraft() {
+function loadStore() {
   try {
-    const d = JSON.parse(localStorage.getItem(LS_DRAFT));
-    if (d && Array.isArray(d.strokes) && d.strokes.length) {
-      d.createdAt = d.createdAt || Date.now();
-      return d;
+    const v = JSON.parse(localStorage.getItem(LS));
+    if (v && Array.isArray(v.balloons)) {
+      const ok = v.balloons.filter((b) => b && Number.isFinite(b.lat) && Number.isFinite(b.lng));
+      if (ok.length < v.balloons.length) queueMicrotask(() => toast('Se omitieron ' + (v.balloons.length - ok.length) + ' globo(s) sin coordenadas'));
+      return { balloons: ok, prefs: v.prefs || {} };
     }
-  } catch { /* */
-  }
-  return newDrawing();
+  } catch { /* */ }
+  return { balloons: [], prefs: {} };
 }
 
-function loadAll() {
+function save() {
   try {
-    const v = JSON.parse(localStorage.getItem(LS_DRAWINGS));
-    return Array.isArray(v) ? v : [];
-  } catch {
-    return [];
-  }
-}
-
-function saveAll() {
-  try {
-    localStorage.setItem(LS_DRAWINGS, JSON.stringify(drawings));
+    localStorage.setItem(LS, JSON.stringify({ version: 1, balloons, prefs: { ...store.prefs, headingNudgeDeg } }));
   } catch {
     toast('No se pudo guardar (almacenamiento lleno)');
   }
 }
 
-function saveDraft() {
-  try {
-    localStorage.setItem(LS_DRAFT, JSON.stringify({ ...drawing, strokes: drawing.strokes }));
-  } catch { /* */
-  }
+/* ---------------- GPS y brújula ---------------- */
+
+function requestPosition() {
+  return new Promise((resolve, reject) => {
+    if (!navigator.geolocation) return reject(new Error('geolocalización no soportada'));
+    const t = setTimeout(() => reject(new Error('timeout')), 15000);
+    navigator.geolocation.getCurrentPosition(
+      (p) => { clearTimeout(t); resolve(p); },
+      (e) => { clearTimeout(t); reject(e); },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+    );
+  });
 }
 
-function makeDotTexture() {
+function setOrigin(p) {
+  origin = {
+    lat: p.coords.latitude,
+    lng: p.coords.longitude,
+    alt: p.coords.altitude || 0,
+    accuracy: p.coords.accuracy || null
+  };
+}
+
+// Azimut horizontal de la parte trasera del celular (donde apunta la cámara), 0..360 (0 = norte).
+// alpha/beta/gamma vienen de DeviceOrientation; se convierte el eje -Z del dispositivo a la
+// terna de referencia de la especificación (X=este, Y=norte, Z=arriba) y se proyecta en plano XY.
+function deviceHeadingDeg() {
+  if (!orientation) return 0;
+  const o = orientation;
+  const alpha = o.alpha || 0;
+  const beta = o.beta || 0;
+  const gamma = o.gamma || 0;
+  const e = new THREE.Euler(degToRad(alpha), degToRad(beta), degToRad(gamma), 'ZXY');
+  const q = new THREE.Quaternion().setFromEuler(e).invert();
+  const back = new THREE.Vector3(0, 0, -1).applyQuaternion(q);
+  return (radToDeg(Math.atan2(back.x, back.y)) + 360) % 360;
+}
+
+function updatePivot() {
+  // El globo "al norte" se coloca en -Z; rotar el mundo con el azimut inicial del celular
+  // deja el norte geográfico alineado con el norte del espacio de la sesión.
+  pivot.rotation.y = degToRad(deviceHeadingDeg() + headingNudgeDeg);
+}
+
+/* ---------------- textura / sprites de globo ---------------- */
+
+function balloonTexture(name, color) {
   const c = document.createElement('canvas');
-  c.width = c.height = 64;
+  c.width = 320;
+  c.height = 256;
   const g = c.getContext('2d');
-  const rad = g.createRadialGradient(32, 32, 0, 32, 32, 32);
-  rad.addColorStop(0, 'rgba(255,255,255,1)');
-  rad.addColorStop(0.35, 'rgba(255,255,255,0.6)');
-  rad.addColorStop(1, 'rgba(255,255,255,0)');
-  g.fillStyle = rad;
+  g.clearRect(0, 0, c.width, c.height);
+  g.fillStyle = 'rgba(8,10,24,0.92)';
+  g.strokeStyle = color || DEFAULT_COLOR;
+  g.lineWidth = 7;
+  g.beginPath();
+  g.roundRect(16, 8, 288, 168, 24);
+  g.fill();
+  g.stroke();
+  g.font = 'bold 70px system-ui, sans-serif';
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.fillText(DEFAULT_ICON, 160, 86);
+  g.font = '600 30px system-ui, sans-serif';
+  g.fillStyle = '#ffffff';
+  g.fillText((name || '').slice(0, 18), 160, 216);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+  return tex;
+}
+
+function glowTexture() {
+  const c = document.createElement('canvas');
+  c.width = 64;
+  c.height = 64;
+  const g = c.getContext('2d');
+  const grad = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+  grad.addColorStop(0, 'rgba(41,255,240,0.8)');
+  grad.addColorStop(1, 'rgba(41,255,240,0)');
+  g.fillStyle = grad;
   g.fillRect(0, 0, 64, 64);
-  return new THREE.CanvasTexture(c);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
 }
 
-const DOT_TEXTURE = makeDotTexture();
-const lineMats = new Map();
-const dotMats = new Map();
+const glowTex = glowTexture();
 
-function lineMat(color) {
-  if (!lineMats.has(color)) {
-    lineMats.set(color, new THREE.LineBasicMaterial({ color, blending: THREE.AdditiveBlending, transparent: true, opacity: 0.95, depthWrite: false, fog: false }));
-  }
-  return lineMats.get(color);
+function addBalloonSprite(b) {
+  const tex = balloonTexture(b.name, b.color);
+  const spr = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: true, depthWrite: false }));
+  const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, transparent: true, depthWrite: false }));
+  const pos = worldPos(b);
+  spr.position.set(pos.x, pos.y, pos.z);
+  spr.scale.set(0.7, 0.56, 1);
+  glow.position.copy(spr.position);
+  glow.scale.set(0.5, 0.5, 1);
+  pivot.add(spr, glow);
 }
 
-function dotMat(color) {
-  if (!dotMats.has(color)) {
-    dotMats.set(color, new THREE.PointsMaterial({ color, size: 0.008, sizeAttenuation: true, map: DOT_TEXTURE, blending: THREE.AdditiveBlending, transparent: true, opacity: 0.8, depthWrite: false, fog: false }));
-  }
-  return dotMats.get(color);
+function worldPos(b) {
+  const d = deltaMeters(origin.lat, origin.lng, b.lat, b.lng);
+  return { x: d.east, y: b.altOffset ?? ALT_OFFSET, z: -d.north };
 }
 
-function createActiveStroke(color) {
-  const positions = new Float32Array(STROKE_CAP * 3);
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-  geo.setDrawRange(0, 0);
-  const line = new THREE.Line(geo, lineMat(color));
-  const dots = new THREE.Points(geo, dotMat(color));
-  const grp = new THREE.Group();
-  grp.add(line, dots);
-  line.frustumCulled = false;
-  dots.frustumCulled = false;
-  return {
-    grp, geo, positions, count: 0,
-    grow(p) {
-      if (this.count >= STROKE_CAP) return;
-      const i = this.count * 3;
-      this.positions[i] = p.x;
-      this.positions[i + 1] = p.y;
-      this.positions[i + 2] = p.z;
-      this.count++;
-      this.geo.setDrawRange(0, this.count);
-      this.geo.attributes.position.needsUpdate = true;
-    },
-    toPoints() {
-      const out = [];
-      for (let k = 0; k < this.count; k++) out.push([this.positions[k * 3], this.positions[k * 3 + 1], this.positions[k * 3 + 2]]);
-      return out;
-    }
-  };
+function renderWorld() {
+  pivot.clear();
+  if (!origin) return;
+  for (const b of balloons) addBalloonSprite(b);
 }
 
-function buildStaticStroke(points3, color) {
-  const arr = new Float32Array(points3.length * 3);
-  points3.forEach((p, i) => {
-    arr[i * 3] = p[0];
-    arr[i * 3 + 1] = p[1];
-    arr[i * 3 + 2] = p[2];
-  });
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.BufferAttribute(arr, 3));
-  geo.computeBoundingSphere();
-  const line = new THREE.Line(geo, lineMat(color));
-  const dots = new THREE.Points(geo, dotMat(color));
-  const grp = new THREE.Group();
-  grp.add(line, dots);
-  line.frustumCulled = false;
-  dots.frustumCulled = false;
-  return grp;
-}
+/* ---------------- UI / sesión ---------------- */
 
-function updateNDC(e) {
-  const x = e.clientX ?? (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
-  const y = e.clientY ?? (e.touches && e.touches[0] ? e.touches[0].clientY : 0);
-  pointerNDC = { x: (x / window.innerWidth) * 2 - 1, y: -((y / window.innerHeight) * 2 - 1) };
-}
-
-const IGNORED = 'button,input,select,textarea,.panel,.modal,.gcard,.toast,.hud-top,.depth-ui,.badge';
-
-function onPointerDown(e) {
-  if (!drawEnabled || mode !== 'draw') return;
-  const t = e.target;
-  if (t instanceof Element && t.closest(IGNORED)) return;
-  if (e.cancelable) e.preventDefault();
-  updateNDC(e);
-  drawingActive = true;
-  lastPoint = null;
-  currentStroke = createActiveStroke(selectedColor);
-  strokeGroup.add(currentStroke.grp);
-  if (controls) controls.enabled = false;
-}
-
-function onPointerMove(e) {
-  updateNDC(e);
-}
-
-function onPointerUp() {
-  if (!drawingActive) return;
-  drawingActive = false;
-  if (currentStroke && currentStroke.count > 0) {
-    drawing.strokes.push({ points: currentStroke.toPoints(), color: selectedColor });
-    currentStroke = null;
-    saveDraft();
-  } else if (currentStroke) {
-    strokeGroup.remove(currentStroke.grp);
-    currentStroke.geo.dispose();
-    currentStroke = null;
-  }
-  lastPoint = null;
-  if (controls) controls.enabled = true;
-}
-
-if (window.PointerEvent) {
-  window.addEventListener('pointerdown', onPointerDown, { passive: false, capture: true });
-  window.addEventListener('pointermove', onPointerMove, { passive: true });
-  window.addEventListener('pointerup', onPointerUp);
-  window.addEventListener('pointercancel', onPointerUp);
-} else {
-  window.addEventListener('touchstart', onPointerDown, { passive: false });
-  window.addEventListener('touchmove', onPointerMove, { passive: true });
-  window.addEventListener('touchend', onPointerUp);
-  window.addEventListener('touchcancel', onPointerUp);
-}
-
-function drawPointFromNDC() {
-  const cam = renderer.xr.isPresenting ? renderer.xr.getCamera() : camera;
-  const dist = renderer.xr.isPresenting ? AR_DISTANCE : drawDistance;
-  raycaster.setFromCamera(pointerNDC, cam);
-  return raycaster.ray.at(dist, new THREE.Vector3());
-}
-
-renderer.setAnimationLoop(() => {
-  if (drawingActive && pointerNDC) {
-    const p = drawPointFromNDC();
-    if (!lastPoint || lastPoint.distanceTo(p) >= STROKE_MIN_DIST) {
-      currentStroke.grow(p);
-      lastPoint = p;
-    }
-  }
-  if (controls) controls.update();
-  renderer.render(scene, camera);
-});
-
-function rebuildStrokeGroup() {
-  strokeGroup.clear();
-  for (const s of drawing.strokes) strokeGroup.add(buildStaticStroke(s.points, s.color));
-}
-
-function showMode(m) {
-  mode = m;
-  modeBadge.textContent = m === 'gallery' ? 'GALERÍA' : 'DIBUJAR';
-  panelDraw.classList.toggle('hidden', m !== 'draw');
-  panelGallery.classList.toggle('hidden', m !== 'gallery');
-  strokeGroup.visible = m === 'draw';
-  if (m === 'gallery') {
-    buildGallery(drawings);
-    renderGalleryList();
-  }
-}
-
-function escapeHtml(s) {
-  return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-}
-
-function renderGalleryList() {
-  galleryList.innerHTML = '';
-  if (!drawings.length) {
-    galleryList.innerHTML = '<p class="empty">Aún no hay dibujos guardados. Vuelve a dibujar y presiona 💾 Guardar.</p>';
+function showStatus() {
+  const sb = $('status-line');
+  if (!origin) {
+    sb.textContent = 'Globos: ' + balloons.length + ' · sin GPS';
+    $('dbg').classList.add('hidden');
     return;
   }
-  const sorted = [...drawings].sort((a, b) => b.createdAt - a.createdAt);
-  for (const d of sorted) {
-    const card = document.createElement('div');
-    card.className = 'gcard';
-    const dots = (d.strokes || []).map((s) => `<i style="background:${s.color}"></i>`).join('');
-    card.innerHTML =
-      `<div class="gname">${escapeHtml(d.name || 'Sin nombre')}</div>` +
-      `<div class="gsub">${(d.strokes || []).length} trazos · ${new Date(d.createdAt).toLocaleDateString()}</div>` +
-      `<div class="gdots">${dots}</div>` +
-      `<div class="gbtns">` +
-      `<button data-act="view" class="btn btn-accent">Ver en AR</button>` +
-      `<button data-act="del" class="btn danger">Eliminar</button>` +
-      `</div>`;
-    card.querySelector('[data-act=view]').addEventListener('click', () => viewInAR([d]));
-    card.querySelector('[data-act=del]').addEventListener('click', () => {
-      drawings = drawings.filter((x) => x.id !== d.id);
-      saveAll();
-      renderGalleryList();
-      toast('Dibujo eliminado');
-    });
-    galleryList.appendChild(card);
-  }
-}
-
-function buildDrawingGroup(d) {
-  if (!d.strokes || !d.strokes.length) return null;
-  const inner = new THREE.Group();
-  let min = new THREE.Vector3(Infinity, Infinity, Infinity);
-  let max = new THREE.Vector3(-Infinity, -Infinity, -Infinity);
-  for (const s of d.strokes) {
-    for (const p of s.points) {
-      if (!Array.isArray(p) || p.length < 3) continue;
-      if (p[0] < min.x) min.x = p[0];
-      if (p[1] < min.y) min.y = p[1];
-      if (p[2] < min.z) min.z = p[2];
-      if (p[0] > max.x) max.x = p[0];
-      if (p[1] > max.y) max.y = p[1];
-      if (p[2] > max.z) max.z = p[2];
-    }
-  }
-  if (!isFinite(min.x)) return null;
-  const center = new THREE.Vector3((min.x + max.x) / 2, (min.y + max.y) / 2, (min.z + max.z) / 2);
-  const span = Math.max(max.x - min.x, max.y - min.y, max.z - min.z, 1e-3);
-  const scale = Math.min(1, 0.7 / span);
-  inner.scale.setScalar(scale);
-  inner.position.copy(center).multiplyScalar(-scale);
-  for (const s of d.strokes) {
-    if (Array.isArray(s.points) && s.points.length) inner.add(buildStaticStroke(s.points, s.color));
-  }
-  return inner;
-}
-
-function buildGallery(items) {
-  galleryGroup.clear();
-  if (!items || !items.length) return;
-  const n = items.length;
-  items.forEach((d, i) => {
-    const g = buildDrawingGroup(d);
-    if (!g) return;
-    const t = n === 1 ? 0 : (i / (n - 1)) * 2 - 1;
-    const angle = t * RING_SPREAD;
-    g.position.set(Math.sin(angle) * RING_RADIUS, 1.2, Math.cos(angle) * RING_RADIUS);
-    g.rotation.y = Math.PI - angle;
-    galleryGroup.add(g);
-  });
-}
-
-function viewInAR(items) {
-  buildGallery(items);
-  if (!renderer.xr.isPresenting) startARSession();
-}
-
-function startARSession() {
-  if (renderer.xr.isPresenting) return;
-  if (enterARButton) enterARButton.click();
-  else toast('AR no disponible aquí');
-}
-
-function initAR() {
-  if (!navigator.xr) {
-    xrStatusEl.textContent = 'Tu navegador no soporta WebXR AR. Usa Chrome/Edge reciente en Android o Safari en iPhone, o el modo 3D.';
-    return;
-  }
-  const sessionInit = {
-    optionalFeatures: ['local-floor', 'hit-test', 'dom-overlay'],
-    domOverlay: { root: hudEl }
-  };
-  enterARButton = ARButton.createButton(renderer, sessionInit);
-  enterARButton.textContent = '▶  Comenzar Realidad Aumentada';
-  enterARBox.appendChild(enterARButton);
-  renderer.xr.addEventListener('sessionstart', onSessionStart);
-  renderer.xr.addEventListener('sessionend', onSessionEnd);
+  $('dbg').classList.remove('hidden');
+  sb.textContent = 'Globos: ' + balloons.length + ' · precisión: ' + (origin.accuracy ? origin.accuracy.toFixed(0) + ' m' : 'n/d');
+  if (origin.accuracy && origin.accuracy > 20) toast('⚠ Precisión baja (' + origin.accuracy.toFixed(0) + ' m)');
 }
 
 function onSessionStart() {
-  overlayStart.classList.add('hidden');
-  hudEl.classList.remove('hidden');
-  scene.background = null;
-  grid.visible = false;
-  if (controls) controls.enabled = false;
-  drawEnabled = true;
-  drawDistance = AR_DISTANCE;
-  depthBox.classList.add('hidden');
-  setDrawBtn();
-  showMode(mode);
-  toast('Toca y arrastra para dibujar en el aire ✨');
+  arOn = true;
+  $('overlay-start').classList.add('hidden');
+  $('hud').classList.remove('hidden');
+  $('aim-dot').classList.remove('hidden');
+  (async () => {
+    try {
+      const p = await requestPosition();
+      setOrigin(p);
+      updatePivot();
+      renderWorld();
+      showStatus();
+      toast('Origin GPS fijado · deja tu primer globo 🎈');
+    } catch (e) {
+      origin = null;
+      renderWorld();
+      showStatus();
+      toast('Sin señal GPS: no se pueden ubicar globos 📡');
+    }
+  })();
 }
 
 function onSessionEnd() {
-  if (drawingActive) onPointerUp();
-  mode = 'draw';
-  hudEl.classList.add('hidden');
-  overlayStart.classList.remove('hidden');
-  scene.background = new THREE.Color(0x05060f);
-  grid.visible = Boolean(controls);
-  setDrawBtn();
+  arOn = false;
+  $('overlay-start').classList.remove('hidden');
+  $('hud').classList.add('hidden');
+  $('aim-dot').classList.add('hidden');
 }
 
-function enterInline() {
-  overlayStart.classList.add('hidden');
-  hudEl.classList.remove('hidden');
-  scene.background = new THREE.Color(0x05060f);
-  grid.visible = true;
-  camera.position.set(0, 1.6, 2.6);
-  camera.lookAt(0, 1.1, 0);
-  controls = new OrbitControls(camera, $('scene'));
-  controls.target.set(0, 1.1, 0);
-  controls.enableDamping = true;
-  controls.update();
-  depthBox.classList.remove('hidden');
-  drawEnabled = false;
-  setDrawBtn();
-  showMode('draw');
-}
-
-function setDrawBtn() {
-  btnDraw.textContent = drawEnabled ? '✏️ ON' : '✏️ OFF';
-  btnDraw.classList.toggle('on', drawEnabled);
-  if (controls) controls.enabled = !drawEnabled;
-}
-
-paletteEl.innerHTML = '';
-PALETTE.forEach((c) => {
-  const b = document.createElement('button');
-  b.className = 'swatch' + (c === selectedColor ? ' on' : '');
-  b.style.background = c;
-  b.dataset.color = c;
-  b.type = 'button';
-  b.addEventListener('click', () => {
-    selectedColor = c;
-    paletteEl.querySelectorAll('.swatch').forEach((el) => el.classList.toggle('on', el.dataset.color === c));
+function initAR() {
+  enterARButton = ARButton.createButton(renderer, {
+    requiredFeatures: ['local-floor'],
+    optionalFeatures: ['dom-overlay'],
+    domOverlay: { root: $('hud') }
   });
-  paletteEl.appendChild(b);
-});
+  enterARButton.textContent = '▶  Comenzar Realidad Aumentada';
+  $('enter-ar').appendChild(enterARButton);
+  enterARButton.addEventListener('click', () => requestOrientationPermission());
+  renderer.xr.addEventListener('sessionstart', onSessionStart);
+  renderer.xr.addEventListener('sessionend', onSessionEnd);
 
-btnDraw.addEventListener('click', () => {
-  if (renderer.xr.isPresenting) {
-    toast('En AR siempre se dibuja al tocar la pantalla');
-    return;
+  const status = $('xr-status');
+  if ('xr' in navigator && navigator.xr) {
+    navigator.xr.isSessionSupported('immersive-ar').then((ok) => {
+      if (!ok) status.textContent = 'Este dispositivo no soporta RA (WebXR AR)';
+    }).catch(() => {
+      status.textContent = 'Error al comprobar WebXR';
+    });
+  } else {
+    status.textContent = 'Este navegador no soporta RA. Usa Chrome/Android o Safari/iPhone recientes.';
   }
-  if (drawingActive) onPointerUp();
-  drawEnabled = !drawEnabled;
-  setDrawBtn();
-});
-
-btnUndo.addEventListener('click', () => {
-  if (!drawing.strokes.length) return toast('Nada que deshacer');
-  drawing.strokes.pop();
-  rebuildStrokeGroup();
-  saveDraft();
-});
-
-btnClear.addEventListener('click', () => {
-  if (!drawing.strokes.length) return;
-  drawing.strokes = [];
-  rebuildStrokeGroup();
-  saveDraft();
-  toast('Lienzo limpio');
-});
-
-btnSave.addEventListener('click', () => {
-  if (!drawing.strokes.length) return toast('Dibuja algo antes de guardar ✏️');
-  inputName.value = drawing.name || `Dibujo ${drawings.length + 1}`;
-  modal.classList.remove('hidden');
-  setTimeout(() => inputName.focus(), 120);
-});
-
-btnModalOk.addEventListener('click', commitSave);
-btnModalCancel.addEventListener('click', () => modal.classList.add('hidden'));
-
-function commitSave() {
-  const name = (inputName.value || '').trim() || `Dibujo ${drawings.length + 1}`;
-  drawing.name = name;
-  const copy = { id: drawing.id, name, color: selectedColor, createdAt: drawing.createdAt, strokes: drawing.strokes };
-  const idx = drawings.findIndex((x) => x.id === drawing.id);
-  if (idx >= 0) drawings[idx] = copy;
-  else drawings.push(copy);
-  saveAll();
-  localStorage.removeItem(LS_DRAFT);
-  modal.classList.add('hidden');
-  drawing = newDrawing();
-  rebuildStrokeGroup();
-  renderGalleryList();
-  toast(`Guardado: "${name}" ✔`);
 }
 
-btnGallery.addEventListener('click', () => showMode('gallery'));
-btnBack.addEventListener('click', () => showMode('draw'));
-btnViewAll.addEventListener('click', () => viewInAR(drawings));
-btnExport.addEventListener('click', () => {
-  const blob = new Blob([JSON.stringify(drawings, null, 2)], { type: 'application/json' });
+// iOS requiere permiso explícito para DeviceOrientation.
+function requestOrientationPermission() {
+  return new Promise((resolve) => {
+    const D = window.DeviceOrientationEvent;
+    if (D && typeof D.requestPermission === 'function') {
+      D.requestPermission().then((r) => {
+        if (r === 'granted') window.addEventListener('deviceorientation', onOrientation, true);
+        resolve();
+      }).catch(() => resolve());
+    } else {
+      window.addEventListener('deviceorientation', onOrientation, true);
+      resolve();
+    }
+  });
+}
+
+function onOrientation(e) {
+  orientation = e;
+}
+
+/* ---------------- colocar globo ---------------- */
+
+function openPlacer() {
+  if (!arOn) return toast('Entra a Realidad Aumentada');
+  if (!origin) return toast('Sin GPS: no hay dónde anclar el globo 📡');
+  requestPosition().then((p) => {
+    pendingPos = p;
+    $('input-name').value = '';
+    $('modal').classList.remove('hidden');
+    setTimeout(() => $('input-name').focus(), 120);
+  }).catch(() => toast('No se pudo leer la posición 📡'));
+}
+
+function commitPlace() {
+  if (!pendingPos || !origin) return;
+  const name = $('input-name').value.trim();
+  if (!name) return toast('Ponle un nombre al globo');
+  const c = pendingPos.coords;
+  balloons.push({
+    id: 'b' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
+    name,
+    icon: DEFAULT_ICON,
+    color: DEFAULT_COLOR,
+    lat: c.latitude,
+    lng: c.longitude,
+    alt: c.altitude || 0,
+    altOffset: ALT_OFFSET,
+    createdAt: Date.now()
+  });
+  save();
+  renderWorld();
+  showStatus();
+  $('modal').classList.add('hidden');
+  pendingPos = null;
+  toast('Globo "🎈 ' + name + '" fijado a tu GPS actual');
+}
+
+/* ---------------- export / import ---------------- */
+
+function exportScene() {
+  const blob = new Blob([JSON.stringify({ version: 1, exportedAt: new Date().toISOString(), balloons }, null, 2)], { type: 'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = 'dibujos_aire.json';
+  a.download = 'argps_balloons.json';
   a.click();
   URL.revokeObjectURL(a.href);
-  toast('Respaldo exportado');
-});
+  toast('⤓ Exportados ' + balloons.length + ' globos');
+}
 
-btnImport.addEventListener('click', () => importFile.click());
-importFile.addEventListener('change', () => {
-  const file = importFile.files && importFile.files[0];
-  if (!file) return;
+function importScene(file) {
   const fr = new FileReader();
   fr.onload = () => {
     try {
-      const data = JSON.parse(fr.result);
-      if (!Array.isArray(data)) throw new Error();
-      const map = new Map(drawings.map((d) => [d.id, d]));
-      for (const d of data) {
-        if (d && d.id && Array.isArray(d.strokes)) map.set(d.id, d);
-      }
-      drawings = Array.from(map.values());
-      saveAll();
-      renderGalleryList();
-      toast(`${drawings.length} dibujos importados`);
+      const d = JSON.parse(fr.result);
+      if (!d || !Array.isArray(d.balloons)) throw new Error('bad');
+      const incoming = d.balloons.filter((b) => b && b.id && Number.isFinite(b.lat) && Number.isFinite(b.lng));
+      const map = new Map(balloons.map((b) => [b.id, b]));
+      for (const b of incoming) map.set(b.id, b);
+      balloons = Array.from(map.values());
+      save();
+      renderWorld();
+      showStatus();
+      toast('⤒ Importados ' + balloons.length + ' globos');
     } catch {
-      toast('Archivo JSON inválido');
+      toast('Archivo inválido');
     }
+    $('import-file').value = '';
   };
   fr.readAsText(file);
-  importFile.value = '';
+}
+
+/* ---------------- eventos ---------------- */
+
+$('btn-place').addEventListener('click', openPlacer);
+$('btn-modal-ok').addEventListener('click', commitPlace);
+$('btn-modal-cancel').addEventListener('click', () => {
+  $('modal').classList.add('hidden');
+  pendingPos = null;
+});
+$('btn-export').addEventListener('click', exportScene);
+$('btn-import').addEventListener('click', () => $('import-file').click());
+$('import-file').addEventListener('change', (e) => {
+  const f = e.target.files && e.target.files[0];
+  if (f) importScene(f);
 });
 
-btnPreview3d.addEventListener('click', enterInline);
+$('btn-nudgel').addEventListener('click', () => {
+  headingNudgeDeg -= 1;
+  updatePivot();
+  save();
+  refreshDbg();
+  toast('⟲ Mundo rotado −1° (total ' + headingNudgeDeg + '°)');
+});
+$('btn-nudger').addEventListener('click', () => {
+  headingNudgeDeg += 1;
+  updatePivot();
+  save();
+  refreshDbg();
+  toast('Mundo rotado +1° (total ' + headingNudgeDeg + '°)');
+});
 
-depthSlider.addEventListener('input', () => {
-  drawDistance = parseFloat(depthSlider.value);
-  depthVal.textContent = drawDistance.toFixed(1);
+window.addEventListener('pointerdown', (e) => {
+  if (!arOn || !origin) return;
+  const t = e.target;
+  if (t instanceof Element && t.closest(IGNORED)) return;
+  openPlacer();
 });
 
 window.addEventListener('resize', () => {
@@ -554,17 +366,28 @@ window.addEventListener('resize', () => {
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
 
-window.addEventListener('beforeunload', saveDraft);
+function refreshDbg() {
+  const dbg = $('dbg');
+  if (dbg.classList.contains('hidden')) return;
+  dbg.textContent =
+    'az ' + deviceHeadingDeg().toFixed(0) + '° · nudge ' + headingNudgeDeg + '°' +
+    (origin ? ' · origen: ' + origin.lat.toFixed(5) + ', ' + origin.lng.toFixed(5) : '');
+}
+
+renderer.setAnimationLoop(() => {
+  if (renderer.xr.isPresenting) {
+    refreshDbg();
+    renderer.render(scene, camera);
+  }
+});
 
 let toastTimer = null;
 function toast(msg) {
-  toastEl.textContent = msg;
-  toastEl.classList.remove('hidden');
+  const el = $('toast');
+  el.textContent = msg;
+  el.classList.remove('hidden');
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => toastEl.classList.add('hidden'), 2400);
+  toastTimer = setTimeout(() => el.classList.add('hidden'), 2600);
 }
 
-setDrawBtn();
-rebuildStrokeGroup();
-renderGalleryList();
 initAR();

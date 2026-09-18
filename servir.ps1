@@ -7,7 +7,7 @@ $port = 8080
 $dir = $PSScriptRoot
 
 Write-Host ""
-Write-Host "==  Dibuja en el Aire - Servidor  ==" -ForegroundColor Cyan
+Write-Host "==  AR GPS Balloons - Servidor  ==" -ForegroundColor Cyan
 Write-Host ""
 
 if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
@@ -42,7 +42,7 @@ else {
     Write-Host "URL en tu red local (celular con PC en el mismo WiFi):" -ForegroundColor Green
     Write-Host "   http://$ip`:$port" -ForegroundColor White
     Write-Host ""
-    Write-Host "OJO: la app AR usa WebXR y REQUIERE HTTPS. Para verla en el celular usa:" -ForegroundColor Yellow
+    Write-Host "OJO: la app usa WebXR y REQUIERE HTTPS. Para verla en el celular usa:" -ForegroundColor Yellow
     Write-Host "   .\servir.ps1 -Tunnel" -ForegroundColor White
     Write-Host ""
     Write-Host "Presiona Ctrl+C para detener." -ForegroundColor DarkGray

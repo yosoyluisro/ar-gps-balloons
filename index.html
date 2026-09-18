@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <title>Dibuja en el Aire · Galería AR</title>
+  <title>AR GPS Balloons</title>
   <link rel="stylesheet" href="style.css">
   <script type="importmap">
     {
@@ -18,52 +18,48 @@
 </head>
 <body>
   <canvas id="scene"></canvas>
+  <div id="aim-dot" class="hidden"></div>
 
   <div id="hud" class="hidden">
     <header class="hud-top">
-      <h1>✒️ Dibuja en el Aire</h1>
-      <span id="mode-badge" class="badge">DIBUJAR</span>
+      <h1>🎈 AR GPS Balloons</h1>
+      <span class="gsub">globos anclados a GPS real</span>
     </header>
 
-    <section id="panel-draw" class="panel panel-draw">
-      <div id="palette" class="palette"></div>
+    <section class="panel">
       <div class="row">
-        <button id="btn-draw" class="btn" title="Encender/apagar dibujo (modo 3D)">✏️ OFF</button>
-        <button id="btn-undo" class="btn" title="Deshacer último trazo">↶</button>
-        <button id="btn-clear" class="btn" title="Limpiar todo">✕</button>
-        <button id="btn-save" class="btn btn-accent" title="Guardar en la galería">💾 Guardar</button>
-        <button id="btn-gallery" class="btn" title="Ver galería">🖼</button>
+        <button id="btn-place" class="btn btn-accent">📍 Dejar globo aquí</button>
+        <button id="btn-nudgel" class="btn" title="Rotar mundo -1°">⟲ −1°</button>
+        <button id="btn-nudger" class="btn" title="Rotar mundo +1°">+1° ⟳</button>
+        <button id="btn-export" class="btn">⤓</button>
+        <button id="btn-import" class="btn">⤒</button>
       </div>
-    </section>
-
-    <section id="panel-gallery" class="panel panel-gallery hidden">
-      <div class="row">
-        <button id="btn-back" class="btn">← Dibujar</button>
-        <button id="btn-view-all" class="btn btn-accent" title="Ver todos en AR">Ver en AR</button>
-        <button id="btn-export" class="btn" title="Exportar respaldo JSON">⤓</button>
-        <button id="btn-import" class="btn" title="Importar JSON">⤒</button>
-      </div>
-      <div id="gallery-list" class="gallery-list"></div>
+      <div id="status-line" class="status-bar">Sin sesión</div>
+      <div id="dbg" class="dbg hidden"></div>
     </section>
   </div>
 
   <div id="overlay-start">
     <div class="card">
-      <div class="logo">✒️</div>
-      <h2>Dibuja en el Aire</h2>
-      <p>Galería 3D en realidad aumentada. Mantén el dedo presionado para dibujar trazos flotantes en el aire y guárdalos para verlos de nuevo.</p>
+      <div class="logo">🎈</div>
+      <h2>AR GPS Balloons</h2>
+      <p>Deja globos informativos flotando en realidad aumentada, anclados a tu posición GPS real. Al volver, aparecen donde los dejaste.</p>
+      <ul class="hint">
+        <li>1 · Pulsa donde ves el globo en tu pantalla</li>
+        <li>2 · El globo queda en tu GPS actual</li>
+        <li>3 · Camina y vuelve: el globo te espera</li>
+      </ul>
       <div id="enter-ar"></div>
-      <button id="btn-preview3d" class="btn ghost">Probar en 3D (escritorio)</button>
       <p id="xr-status" class="status"></p>
     </div>
   </div>
 
   <div id="modal" class="modal hidden">
-    <div class="card">
-      <h3>Guardar dibujo</h3>
-      <input id="input-name" type="text" maxlength="30" placeholder="Nombre del dibujo" autocomplete="off">
+    <div class="card left">
+      <h3>Dejar globo aquí</h3>
+      <input id="input-name" type="text" maxlength="30" placeholder="Nombre (ej. Biblioteca)" autocomplete="off">
       <div class="row">
-        <button id="btn-modal-ok" class="btn btn-accent">Guardar</button>
+        <button id="btn-modal-ok" class="btn btn-accent">Dejar globo</button>
         <button id="btn-modal-cancel" class="btn">Cancelar</button>
       </div>
     </div>
@@ -71,11 +67,6 @@
 
   <input id="import-file" type="file" accept="application/json,.json" class="hidden">
   <div id="toast" class="toast hidden"></div>
-
-  <div id="depth-ui" class="depth-ui hidden">
-    <label>Profundidad: <output id="depth-val">1.8</output> m</label>
-    <input id="depth-slider" type="range" min="0.4" max="8" step="0.1" value="1.8">
-  </div>
 
   <script type="module" src="app.js"></script>
 </body>
