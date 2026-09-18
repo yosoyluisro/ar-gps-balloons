@@ -30,6 +30,8 @@ let headingNudgeDeg = store.prefs.headingNudgeDeg || 0;
 let pendingPos = null;        // posición capturada al pulsar "Dejar globo aquí"
 let arOn = false;
 let enterARButton = null;
+let arSession = null;         // sesión XR activa (para eventos select)
+let lastSelectAt = 0;
 
 /* ---------------- almacenamiento ---------------- */
 
@@ -184,6 +186,8 @@ function onSessionStart() {
   $('overlay-start').classList.add('hidden');
   $('hud').classList.remove('hidden');
   $('aim-dot').classList.remove('hidden');
+  arSession = renderer.xr.getSession();
+  if (arSession) arSession.addEventListener('select', onXRSelect);
   (async () => {
     try {
       const p = await requestPosition();
@@ -203,6 +207,10 @@ function onSessionStart() {
 
 function onSessionEnd() {
   arOn = false;
+  if (arSession) {
+    arSession.removeEventListener('select', onXRSelect);
+    arSession = null;
+  }
   $('overlay-start').classList.remove('hidden');
   $('hud').classList.add('hidden');
   $('aim-dot').classList.add('hidden');
@@ -212,7 +220,7 @@ function initAR() {
   enterARButton = ARButton.createButton(renderer, {
     requiredFeatures: ['local-floor'],
     optionalFeatures: ['dom-overlay'],
-    domOverlay: { root: $('hud') }
+    domOverlay: { root: $('xr-overlay') }
   });
 
   // ARButton inyecta estilos inline (posición absoluta, opacidad 0.5, fuente 13px, etc.)
@@ -268,6 +276,16 @@ function onOrientation(e) {
 }
 
 /* ---------------- colocar globo ---------------- */
+
+// Toque directo sobre la cámara (gesto XR "select"): el golpe pasa por el área
+// transparente del overlay y cae al mundo, abriendo el colocador.
+function onXRSelect() {
+  if (!arOn || !origin) return;
+  const now = Date.now();
+  if (now - lastSelectAt < 500) return;
+  lastSelectAt = now;
+  openPlacer();
+}
 
 function openPlacer() {
   if (!arOn) return toast('Entra a Realidad Aumentada');
@@ -342,6 +360,12 @@ function importScene(file) {
 
 $('btn-place').addEventListener('click', openPlacer);
 $('btn-modal-ok').addEventListener('click', commitPlace);
+$('input-name').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    commitPlace();
+  }
+});
 $('btn-modal-cancel').addEventListener('click', () => {
   $('modal').classList.add('hidden');
   pendingPos = null;

@@ -21,25 +21,41 @@
 </head>
 <body>
   <canvas id="scene"></canvas>
-  <div id="aim-dot" class="hidden"></div>
 
-  <div id="hud" class="hidden">
-    <header class="hud-top">
-      <h1>🎈 AR GPS Balloons</h1>
-      <span class="gsub">globos anclados a GPS real</span>
-    </header>
+  <div id="xr-overlay" aria-hidden="false">
+    <div id="aim-dot" class="hidden"></div>
 
-    <section class="panel">
-      <div class="row">
-        <button id="btn-place" class="btn btn-accent">📍 Dejar globo aquí</button>
-        <button id="btn-nudgel" class="btn" title="Rotar mundo -1°">⟲ −1°</button>
-        <button id="btn-nudger" class="btn" title="Rotar mundo +1°">+1° ⟳</button>
-        <button id="btn-export" class="btn" title="Exportar respaldo JSON">⤓</button>
-        <button id="btn-import" class="btn" title="Importar respaldo JSON">⤒</button>
+    <div id="hud" class="hidden">
+      <header class="hud-top">
+        <h1>🎈 AR GPS Balloons</h1>
+        <span class="gsub">globos anclados a GPS real</span>
+      </header>
+
+      <section class="panel">
+        <div class="row">
+          <button id="btn-place" class="btn btn-accent">📍 Dejar globo aquí</button>
+          <button id="btn-nudgel" class="btn" title="Rotar mundo -1°">⟲ −1°</button>
+          <button id="btn-nudger" class="btn" title="Rotar mundo +1°">+1° ⟳</button>
+          <button id="btn-export" class="btn" title="Exportar respaldo JSON">⤓</button>
+          <button id="btn-import" class="btn" title="Importar respaldo JSON">⤒</button>
+        </div>
+        <div id="status-line" class="status-bar">Sin sesión</div>
+        <div id="dbg" class="dbg hidden"></div>
+      </section>
+    </div>
+
+    <div id="modal" class="modal hidden">
+      <div class="card left">
+        <h3>Dejar globo aquí</h3>
+        <input id="input-name" type="text" maxlength="30" placeholder="Nombre (ej. Biblioteca)" autocomplete="off" enterkeyhint="done">
+        <div class="row">
+          <button id="btn-modal-ok" class="btn btn-accent">Dejar globo</button>
+          <button id="btn-modal-cancel" class="btn">Cancelar</button>
+        </div>
       </div>
-      <div id="status-line" class="status-bar">Sin sesión</div>
-      <div id="dbg" class="dbg hidden"></div>
-    </section>
+    </div>
+
+    <div id="toast" class="toast hidden"></div>
   </div>
 
   <div id="overlay-start">
@@ -57,19 +73,7 @@
     </div>
   </div>
 
-  <div id="modal" class="modal hidden">
-    <div class="card left">
-      <h3>Dejar globo aquí</h3>
-      <input id="input-name" type="text" maxlength="30" placeholder="Nombre (ej. Biblioteca)" autocomplete="off">
-      <div class="row">
-        <button id="btn-modal-ok" class="btn btn-accent">Dejar globo</button>
-        <button id="btn-modal-cancel" class="btn">Cancelar</button>
-      </div>
-    </div>
-  </div>
-
   <input id="import-file" type="file" accept="application/json,.json" class="hidden">
-  <div id="toast" class="toast hidden"></div>
 
   <script type="module" src="app.js"></script>
 </body>

@@ -25,6 +25,15 @@ html, body {
 
 #scene { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
 
+/* Raíz del DOM Overlay de WebXR: todo lo que debe verse/tocarse en AR vive aquí.
+   Sin z-index/filtros/transform para no crear stacking context; con pointer-events
+   none para que los toques sobre zonas transparentes caigan al mundo (evento XR
+   "select"). Los hijos interactivos re-activan pointer-events. */
+#xr-overlay {
+  position: fixed; inset: 0;
+  pointer-events: none;
+}
+
 .hidden { display: none !important; }
 
 button { font-family: inherit; }
@@ -164,6 +173,11 @@ button { font-family: inherit; }
   display: flex; align-items: center; justify-content: center;
   background: rgba(2, 3, 10, 0.7);
   padding: 20px;
+  pointer-events: auto;
+}
+.modal .card {
+  max-height: calc(100dvh - 40px);
+  overflow: auto;
 }
 .modal input[type="text"] {
   width: 100%;
@@ -196,4 +210,5 @@ button { font-family: inherit; }
   max-width: 90%;
   overflow: hidden;
   text-overflow: ellipsis;
+  pointer-events: none;
 }
