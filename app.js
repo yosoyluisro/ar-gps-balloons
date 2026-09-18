@@ -214,8 +214,16 @@ function initAR() {
     optionalFeatures: ['dom-overlay'],
     domOverlay: { root: $('hud') }
   });
-  enterARButton.textContent = '▶  Comenzar Realidad Aumentada';
+
+  // ARButton inyecta estilos inline (posición absoluta, opacidad 0.5, fuente 13px, etc.)
+  // y reescribe el texto ("AR NOT SUPPORTED" / "START AR"). Los neutralizamos: la
+  // apariencia la controla style.css.
+  enterARButton.removeAttribute('style');
+  enterARButton.onmouseenter = null;
+  enterARButton.onmouseleave = null;
+
   $('enter-ar').appendChild(enterARButton);
+  enterARButton.textContent = '▶  Comenzar Realidad Aumentada';
   enterARButton.addEventListener('click', () => requestOrientationPermission());
   renderer.xr.addEventListener('sessionstart', onSessionStart);
   renderer.xr.addEventListener('sessionend', onSessionEnd);
@@ -223,11 +231,18 @@ function initAR() {
   const status = $('xr-status');
   if ('xr' in navigator && navigator.xr) {
     navigator.xr.isSessionSupported('immersive-ar').then((ok) => {
-      if (!ok) status.textContent = 'Este dispositivo no soporta RA (WebXR AR)';
+      if (!ok) {
+        enterARButton.textContent = 'RA no disponible en este dispositivo';
+        enterARButton.classList.add('ar-off');
+        status.textContent = 'Este dispositivo no soporta RA (WebXR AR)';
+      }
     }).catch(() => {
       status.textContent = 'Error al comprobar WebXR';
     });
   } else {
+    // Sin navigator.xr (escritorio/antiguo): ARButton devuelve un enlace, no un botón.
+    enterARButton.textContent = 'Este navegador no soporta RA';
+    enterARButton.classList.add('ar-off');
     status.textContent = 'Este navegador no soporta RA. Usa Chrome/Android o Safari/iPhone recientes.';
   }
 }
