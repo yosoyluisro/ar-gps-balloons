@@ -69,6 +69,15 @@ function requestPosition() {
   });
 }
 
+// KISS: si el GPS falla, caemos al origen ya fijado (o al local 0,0,0) para que
+// colocar globos y dibujarlos funcione siempre, sin depender de la señal.
+function currentPosition() {
+  return requestPosition().catch(() => {
+    if (origin) return { coords: origin };
+    return Promise.reject(new Error('no gps'));
+  });
+}
+
 function setOrigin(p) {
   origin = {
     lat: p.coords.latitude,
@@ -189,19 +198,13 @@ function onSessionStart() {
   arSession = renderer.xr.getSession();
   if (arSession) arSession.addEventListener('select', onXRSelect);
   (async () => {
-    try {
-      const p = await requestPosition();
-      setOrigin(p);
-      updatePivot();
-      renderWorld();
-      showStatus();
-      toast('Origin GPS fijado · deja tu primer globo 🎈');
-    } catch (e) {
-      origin = null;
-      renderWorld();
-      showStatus();
-      toast('Sin señal GPS: no se pueden ubicar globos 📡');
-    }
+    const p = await currentPosition().catch(() => null);
+    if (p) setOrigin(p);
+    else origin = { lat: 0, lng: 0, alt: 0, accuracy: null };
+    updatePivot();
+    renderWorld();
+    showStatus();
+    toast(p ? 'Origin GPS fijado · deja tu primer globo 🎈' : 'Sin GPS: los globos se fijan cerca de ti 🎈');
   })();
 }
 
@@ -290,7 +293,7 @@ function onXRSelect() {
 function openPlacer() {
   if (!arOn) return toast('Entra a Realidad Aumentada');
   if (!origin) return toast('Sin GPS: no hay dónde anclar el globo 📡');
-  requestPosition().then((p) => {
+  currentPosition().then((p) => {
     pendingPos = p;
     $('input-name').value = '';
     $('modal').classList.remove('hidden');
@@ -414,10 +417,8 @@ function refreshDbg() {
 }
 
 renderer.setAnimationLoop(() => {
-  if (renderer.xr.isPresenting) {
-    refreshDbg();
-    renderer.render(scene, camera);
-  }
+  refreshDbg();
+  renderer.render(scene, camera);
 });
 
 let toastTimer = null;
