@@ -8,7 +8,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <title>AR Balloons</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%8E%88%3C/text%3E%3C/svg%3E">
-  <link rel="stylesheet" href="style.css?v=2">
+  <link rel="stylesheet" href="style.css?v=3">
   <script type="importmap">
     {
       "imports": {
@@ -26,12 +26,20 @@
       <span class="badge">✨ NUEVA VERSIÓN</span>
       <div class="logo">🎈</div>
       <h1>AR Balloons</h1>
-      <p>Deja bolitas flotando en el aire: toca la pantalla y se quedan fijas en ese lugar.</p>
+      <p>Toca el objeto que quieras etiquetar (TV, cama, conector…) y escribe su nombre: queda fijo en ese lugar.</p>
       <div id="enter-ar"></div>
       <p id="count" class="status"></p>
     </div>
   </div>
 
-  <script type="module" src="app.js?v=7"></script>
+  <div id="overlay-label" class="hidden">
+    <div class="card small">
+      <p>Nombre para este globo</p>
+      <input id="label-input" type="text" maxlength="22" autocomplete="off" enterkeyhint="done">
+      <button id="label-ok" type="button">Aceptar</button>
+    </div>
+  </div>
+
+  <script type="module" src="app.js?v=8"></script>
 </body>
 </html>
