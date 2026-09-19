@@ -208,6 +208,8 @@ function onSessionStart() {
   $('overlay-start').classList.add('hidden');
   $('hud').classList.remove('hidden');
   $('aim-dot').classList.remove('hidden');
+  clearDebug();
+  buildDebug();
   arSession = renderer.xr.getSession();
   if (arSession) arSession.addEventListener('select', onXRSelect);
   (async () => {
@@ -227,6 +229,7 @@ function onSessionEnd() {
     arSession.removeEventListener('select', onXRSelect);
     arSession = null;
   }
+  clearDebug();
   $('overlay-start').classList.remove('hidden');
   $('hud').classList.add('hidden');
   $('aim-dot').classList.add('hidden');
@@ -235,7 +238,7 @@ function onSessionEnd() {
 function initAR() {
   enterARButton = ARButton.createButton(renderer, {
     requiredFeatures: ['local-floor'],
-    optionalFeatures: ['dom-overlay'],
+    optionalFeatures: ['dom-overlay', 'plane-detection', 'hit-test'],
     domOverlay: { root: $('xr-overlay') }
   });
 
@@ -552,12 +555,139 @@ function refreshDbg() {
   if (dbg.classList.contains('hidden')) return;
   dbg.textContent =
     'az ' + deviceHeadingDeg().toFixed(0) + '° · nudge ' + headingNudgeDeg + '°' +
+    ' · planos ' + debugPlanes.size +
     (origin ? ' · origen: ' + origin.lat.toFixed(5) + ', ' + origin.lng.toFixed(5) : '');
+}
+
+/* ---------------- debug visual (siempre encendido) ---------------- */
+
+const debugPlanes = new Map();      // uid → Line
+let debugGrid = null;
+let debugRay = null;
+let debugRayEnd = null;
+let debugCam = null;
+let debugAxis = null;
+
+function planeColor(plane) {
+  if (plane.orientation === 'horizontal') return 0x29ff90;   // suelo/techo
+  if (plane.orientation === 'vertical') return 0xff2ef0;     // paredes
+  return 0x8f9bbf;
+}
+
+function buildDebug() {
+  // Rejilla en el origen (0,0,0) = donde se ancla el mundo GPS.
+  debugGrid = new THREE.GridHelper(10, 10, 0x29ff90, 0x1b5c46);
+  debugGrid.material.transparent = true;
+  debugGrid.material.opacity = 0.5;
+  scene.add(debugGrid);
+
+  // Ejes X (este/rojo) y Z (norte/azul) desde el origen.
+  const axMat = new THREE.LineBasicMaterial({ vertexColors: true });
+  const axGeo = new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(new Float32Array([0, 0.01, 0, 5, 0.01, 0, 0, 0.01, 0, 0, 0.01, -5]), 3));
+  const axCol = new THREE.BufferAttribute(new Float32Array([1, 0, 0, 1, 0, 0, 0, 0.3, 1, 0, 0.3, 1]), 3);
+  axGeo.setAttribute('color', axCol);
+  debugAxis = new THREE.LineSegments(axGeo, axMat);
+  scene.add(debugAxis);
+
+  // Rayo cámara → punto apuntado (verde si hay superficie, rojo si no).
+  debugRay = new THREE.Line(
+    new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(new Float32Array(6), 3)),
+    new THREE.LineBasicMaterial({ transparent: true, opacity: 0.9 })
+  );
+  debugRay.frustumCulled = false;
+  scene.add(debugRay);
+
+  debugRayEnd = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, transparent: true, depthTest: false, depthWrite: false }));
+  debugRayEnd.scale.set(0.12, 0.12, 1);
+  debugRayEnd.frustumCulled = false;
+  scene.add(debugRayEnd);
+
+  // Marca de la cámara (blanca).
+  debugCam = new THREE.Mesh(new THREE.SphereGeometry(0.03, 8, 8), new THREE.MeshBasicMaterial({ color: 0xffffff }));
+  scene.add(debugCam);
+}
+
+function updateDebugRay() {
+  const from = camera.position;
+  const dir = new THREE.Vector3();
+  camera.getWorldDirection(dir);
+  const to = from.clone().add(dir.multiplyScalar(5));
+  const pos = debugRay.geometry.attributes.position;
+  pos.setXYZ(0, from.x, from.y, from.z);
+  pos.setXYZ(1, to.x, to.y, to.z);
+  pos.needsUpdate = true;
+  debugRay.material.color.setHex(0xff3b3b); // sin superficie objetivo: rojo
+  debugRayEnd.position.copy(to);
+}
+
+function updateDebugPlanes(frame, refSpace) {
+  if (!frame.detectedPlanes) return;
+  const seen = new Set();
+  const tmpP = new THREE.Vector3();
+  const tmpQ = new THREE.Quaternion();
+  frame.detectedPlanes.forEach((plane) => {
+    seen.add(plane.uid);
+    const pose = frame.getPose(plane.planeSpace, refSpace);
+    if (!pose) return;
+    tmpQ.set(pose.transform.orientation.x, pose.transform.orientation.y, pose.transform.orientation.z, pose.transform.orientation.w);
+    tmpP.set(pose.transform.position.x, pose.transform.position.y, pose.transform.position.z);
+    const pts = [];
+    for (const p of plane.polygon) {
+      pts.push(new THREE.Vector3(p.x, p.y, p.z).applyQuaternion(tmpQ).add(tmpP));
+    }
+    let entry = debugPlanes.get(plane.uid);
+    if (!entry) {
+      const line = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ transparent: true, opacity: 0.85 }));
+      scene.add(line);
+      entry = { line };
+      debugPlanes.set(plane.uid, entry);
+    }
+    const attrs = entry.line.geometry.attributes;
+    if (!attrs.position || attrs.position.count !== pts.length + 1) {
+      entry.line.geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array((pts.length + 1) * 3), 3));
+    }
+    for (let i = 0; i < pts.length; i++) {
+      entry.line.geometry.attributes.position.setXYZ(i, pts[i].x, pts[i].y, pts[i].z);
+    }
+    entry.line.geometry.attributes.position.setXYZ(pts.length, pts[0].x, pts[0].y, pts[0].z);
+    entry.line.geometry.attributes.position.needsUpdate = true;
+    entry.line.geometry.computeBoundingSphere();
+    entry.line.material.color.setHex(planeColor(plane));
+  });
+  debugPlanes.forEach((entry, uid) => {
+    if (!seen.has(uid)) {
+      scene.remove(entry.line);
+      entry.line.geometry.dispose();
+      entry.line.material.dispose();
+      debugPlanes.delete(uid);
+    }
+  });
+}
+
+function clearDebug() {
+  debugPlanes.forEach((entry) => {
+    scene.remove(entry.line);
+    entry.line.geometry.dispose();
+    entry.line.material.dispose();
+  });
+  debugPlanes.clear();
+  if (debugGrid) { scene.remove(debugGrid); debugGrid.geometry.dispose(); debugGrid.material.dispose(); debugGrid = null; }
+  if (debugAxis) { scene.remove(debugAxis); debugAxis.geometry.dispose(); debugAxis.material.dispose(); debugAxis = null; }
+  if (debugRay) { scene.remove(debugRay); debugRay.geometry.dispose(); debugRay.material.dispose(); debugRay = null; }
+  if (debugRayEnd) { scene.remove(debugRayEnd); debugRayEnd.material.dispose(); debugRayEnd = null; }
+  if (debugCam) { scene.remove(debugCam); debugCam.geometry.dispose(); debugCam.material.dispose(); debugCam = null; }
 }
 
 renderer.setAnimationLoop(() => {
   refreshDbg();
   collectSprites();
+  if (renderer.xr.isPresenting) {
+    const frame = renderer.xr.getFrame();
+    const refSpace = renderer.xr.getReferenceSpace();
+    updateDebugPlanes(frame, refSpace);
+    if (debugRay) updateDebugRay();
+    if (debugCam) debugCam.position.copy(camera.position);
+  }
   renderer.render(scene, camera);
 });
 
