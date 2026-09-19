@@ -1,24 +1,33 @@
 import * as THREE from 'three';
 import { ARButton } from 'three/addons/webxr/ARButton.js';
-import { deltaMeters, metersToDelta, degToRad, radToDeg } from './geo.js';
 
 const LS = 'argps.v1';
-const ALT_OFFSET = 1.6;        // altura de los globos sobre el nivel de origen (m)
-const DEFAULT_COLOR = '#29fff0';
-const IGNORED = 'button,input,select,textarea,.modal,.toast,.panel,.hud-top,.status-bar,.dbg';
 
-const APP_VERSION = '0.4.2';
+const ORB = 'rgba(41,255,240,1)';
+const PLACE_DIST = 2.2;
+const FLOAT_ABOVE = 0.2;
+const LABEL_GAP = 0.32;
+const LABEL_H = 0.11;
 
-const $ = (id) => document.getElementById(id);
+const renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('scene'), antialias: true, alpha: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setClearAlpha(0);
+renderer.xr.enabled = true;
+renderer.xr.setReferenceSpaceType('local');
 
-function renderVersion() {
-  const el = $('version');
-  const hud = $('version-hud');
-  const v = 'v' + APP_VERSION;
-  if (el) el.textContent = v;
-  if (hud) hud.textContent = v;
-}
-renderVersion();
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 100);
+
+const startEl = document.getElementById('overlay-start');
+const countEl = document.getElementById('count');
+const nameOverlay = document.getElementById('overlay-label');
+const nameInput = document.getElementById('label-input');
+const nameOk = document.getElementById('label-ok');
+const overlayRoot = document.getElementById('overlay');
+const qrEl = document.getElementById('qr');
+const versionEl = document.getElementById('version');
+const APP_VERSION = '0.5.0';
 
 function pagesUrl() {
   const h = location.hostname;
@@ -26,654 +35,258 @@ function pagesUrl() {
 }
 
 function renderQr() {
-  const el = $('qr');
-  if (!el || typeof qrcode !== 'function') return;
+  if (!qrEl || typeof qrcode !== 'function') return;
   const qr = qrcode(0, 'M');
   qr.addData(pagesUrl());
   qr.make();
-  el.innerHTML = qr.createImgTag(4, 2);
+  qrEl.innerHTML = qr.createImgTag(5, 2);
 }
 renderQr();
+if (versionEl) versionEl.textContent = 'v' + APP_VERSION;
 
-const renderer = new THREE.WebGLRenderer({ canvas: $('scene'), antialias: true, alpha: true });
-renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-renderer.setClearAlpha(0);
-renderer.xr.enabled = true;
+let balloons = 0;
+let hitTestSource = null;
+let transientSource = null;
+let placePending = false;
+let selectGuardUntil = 0;
+let labelWaiting = null;
+let pendingBalloonPos = null;
 
-const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 1000);
-const pivot = new THREE.Group();
-scene.add(pivot);
+/* ---------------- persistencia (los globos vuelven al entrar) ---------------- */
 
-let store = loadStore();
-let balloons = store.balloons;
+let balloonsList = loadBalloons();
 
-let origin = null;            // { lat, lng, alt, accuracy }
-let orientation = null;       // ultimo evento deviceorientation
-let headingNudgeDeg = store.prefs.headingNudgeDeg || 0;
-let pendingPos = null;        // posicion capturada al pulsar "Dejar globo aqui"
-let arOn = false;
-let enterARButton = null;
-let arSession = null;         // sesion XR activa (para eventos select)
-let lastSelectAt = 0;
-let mode = 'reg';             // 'reg' = Registrar - 'view' = Solo visualizar
-
-/* ---------------- almacenamiento ---------------- */
-
-function loadStore() {
+function loadBalloons() {
   try {
     const v = JSON.parse(localStorage.getItem(LS));
-    if (v && Array.isArray(v.balloons)) {
-      const ok = v.balloons.filter((b) => b && Number.isFinite(b.lat) && Number.isFinite(b.lng));
-      if (ok.length < v.balloons.length) queueMicrotask(() => toast('Se omitieron ' + (v.balloons.length - ok.length) + ' globo(s) sin coordenadas'));
-      return { balloons: ok, prefs: v.prefs || {} };
-    }
+    if (v && Array.isArray(v)) return v.filter((b) => b && typeof b.name === 'string' && Number.isFinite(b.x) && Number.isFinite(b.z));
   } catch { /* */ }
-  return { balloons: [], prefs: {} };
+  return [];
 }
 
-function save() {
+function saveBalloons() {
   try {
-    localStorage.setItem(LS, JSON.stringify({ version: 1, balloons, prefs: { ...store.prefs, headingNudgeDeg } }));
+    localStorage.setItem(LS, JSON.stringify(balloonsList));
   } catch {
     toast('No se pudo guardar (almacenamiento lleno)');
   }
 }
 
-/* ---------------- GPS y brujula ---------------- */
-
-function requestPosition() {
-  return new Promise((resolve, reject) => {
-    if (!navigator.geolocation) return reject(new Error('geolocalizacion no soportada'));
-    const t = setTimeout(() => reject(new Error('timeout')), 15000);
-    navigator.geolocation.getCurrentPosition(
-      (p) => { clearTimeout(t); resolve(p); },
-      (e) => { clearTimeout(t); reject(e); },
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
-    );
-  });
+function restoreBalloons() {
+  for (const b of balloonsList) {
+    const group = makeBallGroup();
+    group.position.set(b.x, b.y ?? FLOAT_ABOVE, b.z);
+    balloons++;
+    const label = makeLabelSprite(b.name || 'Globo ' + balloons);
+    label.position.y = FLOAT_ABOVE - LABEL_GAP;
+    group.add(label);
+  }
 }
 
-// KISS: si el GPS falla, caemos al origen ya fijado (o al local 0,0,0) para que
-// colocar globos y dibujarlos funcione siempre, sin depender de la senal.
-function currentPosition() {
-  return requestPosition().catch(() => {
-    if (origin) return { coords: origin };
-    return Promise.reject(new Error('no gps'));
-  });
-}
-
-function setOrigin(p) {
-  origin = {
-    lat: p.coords.latitude,
-    lng: p.coords.longitude,
-    alt: p.coords.altitude || 0,
-    accuracy: p.coords.accuracy || null
-  };
-}
-
-// Azimut horizontal de la parte trasera del celular (donde apunta la camara), 0..360 (0 = norte).
-// alpha/beta/gamma vienen de DeviceOrientation; se convierte el eje -Z del dispositivo a la
-// terna de referencia de la especificacion (X=este, Y=norte, Z=arriba) y se proyecta en plano XY.
-function deviceHeadingDeg() {
-  if (!orientation) return 0;
-  const o = orientation;
-  const alpha = o.alpha || 0;
-  const beta = o.beta || 0;
-  const gamma = o.gamma || 0;
-  const e = new THREE.Euler(degToRad(alpha), degToRad(beta), degToRad(gamma), 'ZXY');
-  const q = new THREE.Quaternion().setFromEuler(e).invert();
-  const back = new THREE.Vector3(0, 0, -1).applyQuaternion(q);
-  return (radToDeg(Math.atan2(back.x, back.y)) + 360) % 360;
-}
-
-function updatePivot() {
-  // El globo "al norte" se coloca en -Z; rotar el mundo con el azimut inicial del celular
-  // deja el norte geografico alineado con el norte del espacio de la sesion.
-  pivot.rotation.y = degToRad(deviceHeadingDeg() + headingNudgeDeg);
-}
-
-/* ---------------- textura / sprites de globo ---------------- */
-
-function esc(s) {
-  return String(s).replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
-}
-
-function drawBalloonIcon(g, cx, cy, color) {
-  const r = 34;
-  g.save();
-  const grad = g.createRadialGradient(cx - 8, cy - 8, 4, cx, cy, r);
-  grad.addColorStop(0, '#ffffff');
-  grad.addColorStop(0.35, color);
-  grad.addColorStop(1, color);
-  g.fillStyle = grad;
-  g.beginPath();
-  g.ellipse(cx, cy, r, r * 1.12, 0, 0, Math.PI * 2);
-  g.fill();
-  g.fillStyle = color;
-  g.beginPath();
-  g.moveTo(cx - 7, cy + r * 1.12);
-  g.lineTo(cx + 7, cy + r * 1.12);
-  g.lineTo(cx, cy + r * 1.12 + 12);
-  g.closePath();
-  g.fill();
-  g.strokeStyle = 'rgba(255,255,255,0.65)';
-  g.lineWidth = 2;
-  g.beginPath();
-  g.moveTo(cx, cy + r * 1.12 + 12);
-  g.quadraticCurveTo(cx + 14, cy + r * 1.12 + 30, cx - 4, cy + r * 1.12 + 48);
-  g.stroke();
-  g.restore();
-}
-
-function balloonTexture(name, color) {
+function orbTexture() {
   const c = document.createElement('canvas');
-  c.width = 320;
-  c.height = 256;
+  c.width = c.height = 128;
   const g = c.getContext('2d');
-  g.clearRect(0, 0, c.width, c.height);
-  g.fillStyle = 'rgba(8,10,24,0.92)';
-  g.strokeStyle = color || DEFAULT_COLOR;
-  g.lineWidth = 7;
-  g.beginPath();
-  g.roundRect(16, 8, 288, 168, 24);
-  g.fill();
-  g.stroke();
-  drawBalloonIcon(g, 160, 90, color || DEFAULT_COLOR);
-  g.font = '600 30px system-ui, sans-serif';
-  g.fillStyle = '#ffffff';
-  g.fillText((name || '').slice(0, 18), 160, 216);
-  const tex = new THREE.CanvasTexture(c);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  tex.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
-  return tex;
-}
-
-function glowTexture() {
-  const c = document.createElement('canvas');
-  c.width = 64;
-  c.height = 64;
-  const g = c.getContext('2d');
-  const grad = g.createRadialGradient(32, 32, 0, 32, 32, 32);
-  grad.addColorStop(0, 'rgba(41,255,240,0.8)');
+  const grad = g.createRadialGradient(48, 44, 6, 64, 64, 62);
+  grad.addColorStop(0, 'rgba(255,255,255,1)');
+  grad.addColorStop(0.35, ORB);
   grad.addColorStop(1, 'rgba(41,255,240,0)');
   g.fillStyle = grad;
-  g.fillRect(0, 0, 64, 64);
-  const tex = new THREE.CanvasTexture(c);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  return tex;
+  g.fillRect(0, 0, 128, 128);
+  return new THREE.CanvasTexture(c);
 }
 
-const glowTex = glowTexture();
+function ringTexture() {
+  const c = document.createElement('canvas');
+  c.width = c.height = 128;
+  const g = c.getContext('2d');
+  g.strokeStyle = ORB;
+  g.lineWidth = 6;
+  g.beginPath();
+  g.arc(64, 64, 52, 0, Math.PI * 2);
+  g.stroke();
+  return new THREE.CanvasTexture(c);
+}
 
-function addBalloonSprite(b) {
-  const tex = balloonTexture(b.name, b.color);
+const ballTex = orbTexture();
+
+function aimPoint(dist) {
+  const dir = new THREE.Vector3();
+  camera.getWorldDirection(dir);
+  return camera.position.clone().add(dir.multiplyScalar(dist));
+}
+
+function textSpriteTexture(text) {
+  const c = document.createElement('canvas');
+  const g = c.getContext('2d');
+  const fs = 64;
+  g.font = '700 ' + fs + 'px system-ui, sans-serif';
+  const padX = 40;
+  const padY = 22;
+  const w = Math.ceil(g.measureText(text).width + padX * 2);
+  const h = Math.ceil(fs + padY * 2);
+  c.width = w;
+  c.height = h;
+  const g2 = c.getContext('2d');
+  g2.font = '700 ' + fs + 'px system-ui, sans-serif';
+  g2.fillStyle = 'rgba(5, 6, 15, 0.82)';
+  const r = h / 2;
+  g2.beginPath();
+  g2.moveTo(r, 0);
+  g2.arcTo(w, 0, w, h, r);
+  g2.arcTo(w, h, 0, h, r);
+  g2.arcTo(0, h, 0, 0, r);
+  g2.arcTo(0, 0, w, 0, r);
+  g2.closePath();
+  g2.fill();
+  g2.fillStyle = '#e8ecff';
+  g2.textAlign = 'center';
+  g2.textBaseline = 'middle';
+  g2.fillText(text, w / 2, h / 2 + 4);
+  return new THREE.CanvasTexture(c);
+}
+
+function makeLabelSprite(text) {
+  const tex = textSpriteTexture(text);
   const spr = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: true, depthWrite: false }));
-  const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, transparent: true, depthWrite: false }));
-  const pos = worldPos(b);
-  spr.position.set(pos.x, pos.y, pos.z);
-  spr.scale.set(0.7, 0.56, 1);
-  glow.position.copy(spr.position);
-  glow.scale.set(0.5, 0.5, 1);
-  spr.userData.id = b.id;
-  glow.userData.id = b.id;
-  pivot.add(spr, glow);
+  spr.scale.y = LABEL_H;
+  spr.scale.x = LABEL_H * (tex.image.width / tex.image.height);
+  return spr;
 }
 
-function worldPos(b) {
-  const d = deltaMeters(origin.lat, origin.lng, b.lat, b.lng);
-  return { x: d.east, y: b.altOffset ?? ALT_OFFSET, z: -d.north };
+function applyLabel(spr, text) {
+  const tex = textSpriteTexture(text);
+  spr.material.map = tex;
+  spr.material.needsUpdate = true;
+  spr.scale.x = LABEL_H * (tex.image.width / tex.image.height);
 }
 
-function renderWorld() {
-  pivot.clear();
-  if (!origin) return;
-  for (const b of balloons) addBalloonSprite(b);
+function makeBallGroup() {
+  const group = new THREE.Group();
+  const ball = new THREE.Sprite(new THREE.SpriteMaterial({ map: ballTex, transparent: true, depthTest: true, depthWrite: false }));
+  ball.scale.set(0.35, 0.35, 1);
+  ball.position.y = FLOAT_ABOVE;
+  group.add(ball);
+  scene.add(group);
+  return group;
 }
 
-/* ---------------- UI / sesion ---------------- */
-
-function showStatus() {
-  const sb = $('status-line');
-  if (!origin) {
-    sb.textContent = 'Globos: ' + balloons.length + ' - sin GPS';
-    $('dbg').classList.add('hidden');
-    return;
-  }
-  $('dbg').classList.remove('hidden');
-  sb.textContent = 'Globos: ' + balloons.length + ' - precision: ' + (origin.accuracy ? origin.accuracy.toFixed(0) + ' m' : 'n/d');
-  if (origin.accuracy && origin.accuracy > 20) toast('<i class="fa-solid fa-triangle-exclamation"></i> Precision baja (' + origin.accuracy.toFixed(0) + ' m)');
+function placeLabel(surfacePos) {
+  const group = makeBallGroup();
+  group.position.copy(surfacePos);
+  balloons++;
+  const label = makeLabelSprite('Globo ' + balloons);
+  label.position.y = FLOAT_ABOVE - LABEL_GAP;
+  group.add(label);
+  labelWaiting = label;
+  pendingBalloonPos = group.position.clone();
+  nameOverlay.classList.remove('hidden');
+  nameInput.value = 'Globo ' + balloons;
+  nameInput.focus();
+  nameInput.select();
 }
 
-function setMode(m) {
-  mode = m;
-  const isReg = m === 'reg';
-  $('mode-reg').classList.toggle('active', isReg);
-  $('mode-view').classList.toggle('active', !isReg);
-  const btnMode = $('btn-mode');
-  if (btnMode) btnMode.innerHTML = isReg ? '<i class="fa-solid fa-folder-open"></i> Registrar' : '<i class="fa-solid fa-eye"></i> Solo visualizar';
-  if (arOn) toast(isReg ? 'Modo Registrar - toca para dejar globos' : 'Modo Solo visualizar - no se dejan globos');
+function placeFree() {
+  const group = makeBallGroup();
+  group.position.copy(aimPoint(PLACE_DIST));
+  balloons++;
+  const label = makeLabelSprite('Globo ' + balloons);
+  label.position.y = FLOAT_ABOVE - LABEL_GAP;
+  group.add(label);
+  labelWaiting = label;
+  pendingBalloonPos = group.position.clone();
+  nameOverlay.classList.remove('hidden');
+  nameInput.value = 'Globo ' + balloons;
+  nameInput.focus();
+  nameInput.select();
 }
 
-function onSessionStart() {
-  arOn = true;
-  $('overlay-start').classList.add('hidden');
-  $('hud').classList.remove('hidden');
-  $('aim-dot').classList.remove('hidden');
-  clearDebug();
-  buildDebug();
-  arSession = renderer.xr.getSession();
-  if (arSession) arSession.addEventListener('select', onXRSelect);
-  (async () => {
-    const p = await currentPosition().catch(() => null);
-    if (p) setOrigin(p);
-    else origin = { lat: 0, lng: 0, alt: 0, accuracy: null };
-    updatePivot();
-    renderWorld();
-    showStatus();
-    toast(p ? '<i class="fa-solid fa-satellite-dish"></i> Origin GPS fijado - deja tu primer globo' : '<i class="fa-solid fa-triangle-exclamation"></i> Sin GPS: los globos se fijan cerca de ti');
-  })();
+function hideNamePrompt() {
+  nameOverlay.classList.add('hidden');
+  nameInput.blur();
+  nameInput.value = '';
+  selectGuardUntil = Date.now() + 700;
 }
 
-function onSessionEnd() {
-  arOn = false;
-  if (arSession) {
-    arSession.removeEventListener('select', onXRSelect);
-    arSession = null;
-  }
-  clearDebug();
-  $('overlay-start').classList.remove('hidden');
-  $('hud').classList.add('hidden');
-  $('aim-dot').classList.add('hidden');
-}
-
-function initAR() {
-  enterARButton = ARButton.createButton(renderer, {
-    requiredFeatures: ['local-floor'],
-    optionalFeatures: ['dom-overlay', 'plane-detection', 'hit-test'],
-    domOverlay: { root: $('xr-overlay') }
-  });
-
-  // ARButton inyecta estilos inline (posicion absoluta, opacidad 0.5, fuente 13px, etc.)
-  // y reescribe el texto ("AR NOT SUPPORTED" / "START AR"). Los neutralizamos: la
-  // apariencia la controla style.css.
-  enterARButton.removeAttribute('style');
-  enterARButton.onmouseenter = null;
-  enterARButton.onmouseleave = null;
-
-  $('enter-ar').appendChild(enterARButton);
-  enterARButton.textContent = '  Comenzar Realidad Aumentada';
-  enterARButton.addEventListener('click', () => requestOrientationPermission());
-  renderer.xr.addEventListener('sessionstart', onSessionStart);
-  renderer.xr.addEventListener('sessionend', onSessionEnd);
-
-  const status = $('xr-status');
-  if ('xr' in navigator && navigator.xr) {
-    navigator.xr.isSessionSupported('immersive-ar').then((ok) => {
-      if (!ok) {
-        enterARButton.textContent = 'RA no disponible en este dispositivo';
-        enterARButton.classList.add('ar-off');
-        status.textContent = 'Este dispositivo no soporta RA (WebXR AR)';
-      }
-    }).catch(() => {
-      status.textContent = 'Error al comprobar WebXR';
-    });
-  } else {
-    // Sin navigator.xr (escritorio/antiguo): ARButton devuelve un enlace, no un boton.
-    enterARButton.textContent = 'Este navegador no soporta RA';
-    enterARButton.classList.add('ar-off');
-    status.textContent = 'Este navegador no soporta RA. Usa Chrome/Android o Safari/iPhone recientes.';
-  }
-}
-
-// iOS requiere permiso explicito para DeviceOrientation.
-function requestOrientationPermission() {
-  return new Promise((resolve) => {
-    const D = window.DeviceOrientationEvent;
-    if (D && typeof D.requestPermission === 'function') {
-      D.requestPermission().then((r) => {
-        if (r === 'granted') window.addEventListener('deviceorientation', onOrientation, true);
-        resolve();
-      }).catch(() => resolve());
-    } else {
-      window.addEventListener('deviceorientation', onOrientation, true);
-      resolve();
+nameOk.addEventListener('click', () => {
+  if (labelWaiting) {
+    const name = nameInput.value.trim() || 'Globo ' + balloons;
+    applyLabel(labelWaiting, name);
+    if (pendingBalloonPos) {
+      balloonsList.push({
+        name,
+        x: pendingBalloonPos.x,
+        y: pendingBalloonPos.y,
+        z: pendingBalloonPos.z
+      });
+      pendingBalloonPos = null;
+      saveBalloons();
     }
-  });
-}
-
-function onOrientation(e) {
-  orientation = e;
-}
-
-/* ---------------- colocar globo ---------------- */
-
-const raycaster = new THREE.Raycaster();
-const editBalloonSprites = new Map(); // id -> { spr, glow } (solo los visibles en el frame)
-
-function collectSprites() {
-  editBalloonSprites.clear();
-  for (const child of pivot.children) {
-    if (child.isSprite && child.userData && child.userData.id) {
-      editBalloonSprites.set(child.userData.id, child);
-    }
+    labelWaiting = null;
   }
-}
+  hideNamePrompt();
+});
 
-function findHitBalloon() {
-  raycaster.setFromCamera({ x: 0, y: 0 }, camera);
-  const sprites = Array.from(editBalloonSprites.values());
-  const hits = raycaster.intersectObjects(sprites, false);
-  if (!hits.length) return null;
-  const hit = hits[0];
-  return hit.object.userData.id || null;
-}
-
-// Toque directo sobre la camara (gesto XR "select"): si toca un globo, abre su edicion;
-// si no, en modo Registrar abre el colocador.
-function onXRSelect() {
-  if (!arOn || !origin) return;
-  const now = Date.now();
-  if (now - lastSelectAt < 500) return;
-  lastSelectAt = now;
-  if (pendingMoveId) {
-    currentPosition().then((p) => {
-      const b = balloons.find((x) => x.id === pendingMoveId);
-      if (!b) return;
-      b.lat = p.coords.latitude;
-      b.lng = p.coords.longitude;
-      pendingMoveId = null;
-      save();
-      renderWorld();
-      showStatus();
-      toast('<i class="fa-solid fa-crosshairs"></i> Globo movido a tu GPS actual');
-    }).catch(() => toast('<i class="fa-solid fa-satellite-dish"></i> No se pudo leer la posicion'));
-    return;
-  }
-  const bid = findHitBalloon();
-  if (bid) {
-    openEdit(bid);
-  } else {
-    openPlacer();
-  }
-}
-
-let editingId = null;
-
-function openEdit(id) {
-  const b = balloons.find((x) => x.id === id);
-  if (!b) return;
-  editingId = id;
-  $('edit-title').textContent = (b.name || 'Globo');
-  $('edit-info').textContent = 'Lat ' + b.lat.toFixed(6) + ' - Lng ' + b.lng.toFixed(6) + (b.createdAt ? ' - ' + new Date(b.createdAt).toLocaleString() : '');
-  $('edit-modal').classList.remove('hidden');
-}
-
-function closeEdit() {
-  $('edit-modal').classList.add('hidden');
-  editingId = null;
-}
-
-function currentEditBalloon() {
-  return balloons.find((x) => x.id === editingId) || null;
-}
-
-function nudgeBalloon(eastM, northM) {
-  const b = currentEditBalloon();
-  if (!b) return;
-  const p = metersToDelta(b.lat, b.lng, eastM, northM);
-  b.lat = p.lat;
-  b.lng = p.lng;
-  save();
-  renderWorld();
-  showStatus();
-  openEdit(b.id);
-  toast('<i class="fa-solid fa-crosshairs"></i> Globo movido');
-}
-
-function deleteEditingBalloon() {
-  const b = currentEditBalloon();
-  if (!b) return;
-  balloons = balloons.filter((x) => x.id !== b.id);
-  save();
-  renderWorld();
-  showStatus();
-  closeEdit();
-  toast('<i class="fa-solid fa-trash"></i> Globo borrado');
-}
-
-function renameEditingBalloon() {
-  const b = currentEditBalloon();
-  if (!b) return;
-  const name = prompt('Nuevo nombre para el globo:', b.name || '');
-  if (name === null || name.trim() === '') return;
-  b.name = name.trim().slice(0, 30);
-  save();
-  renderWorld();
-  showStatus();
-  openEdit(b.id);
-  toast('<i class="fa-solid fa-pen"></i> Globo renombrado');
-}
-
-function moveEditingBalloon() {
-  const b = currentEditBalloon();
-  if (!b) return;
-  closeEdit();
-  toast('<i class="fa-solid fa-crosshairs"></i> Apunta al lugar y toca para mover');
-  pendingMoveId = b.id;
-}
-
-let pendingMoveId = null;
-
-function openPlacer() {
-  if (!arOn) return toast('Entra a Realidad Aumentada');
-  if (mode === 'view') return toast('<i class="fa-solid fa-eye"></i> Modo Solo visualizar - no puedes dejar globos');
-  if (!origin) return toast('<i class="fa-solid fa-satellite-dish"></i> Sin GPS: no hay donde anclar el globo');
-  currentPosition().then((p) => {
-    pendingPos = p;
-    $('input-name').value = '';
-    $('modal').classList.remove('hidden');
-    setTimeout(() => $('input-name').focus(), 120);
-  }).catch(() => toast('<i class="fa-solid fa-satellite-dish"></i> No se pudo leer la posicion'));
-}
-
-function commitPlace() {
-  if (mode === 'view') {
-    $('modal').classList.add('hidden');
-    pendingPos = null;
-    return toast('<i class="fa-solid fa-eye"></i> Modo Solo visualizar - no puedes dejar globos');
-  }
-  if (!pendingPos || !origin) return;
-  const name = $('input-name').value.trim();
-  if (!name) return toast('Ponle un nombre al globo');
-  const c = pendingPos.coords;
-  balloons.push({
-    id: 'b' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
-    name,
-    color: DEFAULT_COLOR,
-    lat: c.latitude,
-    lng: c.longitude,
-    alt: c.altitude || 0,
-    altOffset: ALT_OFFSET,
-    createdAt: Date.now()
-  });
-  save();
-  renderWorld();
-  showStatus();
-  $('modal').classList.add('hidden');
-  pendingPos = null;
-  toast('<i class="fa-solid fa-location-dot"></i> Globo "' + esc(name) + '" fijado a tu GPS actual');
-}
-
-/* ---------------- export / import ---------------- */
-
-function exportScene() {
-  const blob = new Blob([JSON.stringify({ version: 1, exportedAt: new Date().toISOString(), balloons }, null, 2)], { type: 'application/json' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = 'argps_balloons.json';
-  a.click();
-  URL.revokeObjectURL(a.href);
-  toast('<i class="fa-solid fa-download"></i> Exportados ' + balloons.length + ' globos');
-}
-
-function importScene(file) {
-  const fr = new FileReader();
-  fr.onload = () => {
-    try {
-      const d = JSON.parse(fr.result);
-      if (!d || !Array.isArray(d.balloons)) throw new Error('bad');
-      const incoming = d.balloons.filter((b) => b && b.id && Number.isFinite(b.lat) && Number.isFinite(b.lng));
-      const map = new Map(balloons.map((b) => [b.id, b]));
-      for (const b of incoming) map.set(b.id, b);
-      balloons = Array.from(map.values());
-      save();
-      renderWorld();
-      showStatus();
-      toast('<i class="fa-solid fa-file-import"></i> Importados ' + balloons.length + ' globos');
-    } catch {
-      toast('Archivo invalido');
-    }
-    $('import-file').value = '';
-  };
-  fr.readAsText(file);
-}
-
-/* ---------------- eventos ---------------- */
-
-$('btn-place').addEventListener('click', openPlacer);
-$('btn-mode').addEventListener('click', () => setMode(mode === 'reg' ? 'view' : 'reg'));
-$('mode-reg').addEventListener('click', () => setMode('reg'));
-$('mode-view').addEventListener('click', () => setMode('view'));
-$('btn-modal-ok').addEventListener('click', commitPlace);
-$('input-name').addEventListener('keydown', (e) => {
+nameInput.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') {
     e.preventDefault();
-    commitPlace();
+    nameOk.click();
   }
 });
-$('btn-modal-cancel').addEventListener('click', () => {
-  $('modal').classList.add('hidden');
-  pendingPos = null;
-});
-$('btn-export').addEventListener('click', exportScene);
-$('btn-import').addEventListener('click', () => $('import-file').click());
-$('import-file').addEventListener('change', (e) => {
-  const f = e.target.files && e.target.files[0];
-  if (f) importScene(f);
-});
 
-// ---- edicion de globos ----
-$('btn-edit-rename').addEventListener('click', renameEditingBalloon);
-$('btn-edit-move').addEventListener('click', moveEditingBalloon);
-$('btn-edit-delete').addEventListener('click', deleteEditingBalloon);
-$('btn-edit-close').addEventListener('click', closeEdit);
-$('btn-edit-nudge-n').addEventListener('click', () => nudgeBalloon(0, 0.01));
-$('btn-edit-nudge-s').addEventListener('click', () => nudgeBalloon(0, -0.01));
-$('btn-edit-nudge-e').addEventListener('click', () => nudgeBalloon(0.01, 0));
-$('btn-edit-nudge-w').addEventListener('click', () => nudgeBalloon(-0.01, 0));
-
-$('btn-nudgel').addEventListener('click', () => {
-  headingNudgeDeg -= 1;
-  updatePivot();
-  save();
-  refreshDbg();
-  toast('<i class="fa-solid fa-rotate-left"></i> Mundo rotado -1 (total ' + headingNudgeDeg + ')');
-});
-$('btn-nudger').addEventListener('click', () => {
-  headingNudgeDeg += 1;
-  updatePivot();
-  save();
-  refreshDbg();
-  toast('<i class="fa-solid fa-rotate-right"></i> Mundo rotado +1 (total ' + headingNudgeDeg + ')');
-});
-
-window.addEventListener('pointerdown', (e) => {
-  if (!arOn || !origin) return;
-  const t = e.target;
-  if (t instanceof Element && t.closest(IGNORED)) return;
-  openPlacer();
-});
-
-window.addEventListener('resize', () => {
-  camera.aspect = window.innerWidth / window.innerHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(window.innerWidth, window.innerHeight);
-});
-
-function refreshDbg() {
-  const dbg = $('dbg');
-  if (dbg.classList.contains('hidden')) return;
-  dbg.textContent =
-    'az ' + deviceHeadingDeg().toFixed(0) + ' - nudge ' + headingNudgeDeg +
-    ' - planos ' + debugPlanes.size +
-    (origin ? ' - origen: ' + origin.lat.toFixed(5) + ', ' + origin.lng.toFixed(5) : '');
+function onSelect() {
+  if (Date.now() < selectGuardUntil) return;
+  if (!nameOverlay.classList.contains('hidden')) return;
+  placePending = true;
 }
 
-/* ---------------- debug visual (siempre encendido) ---------------- */
+async function setupHitTest() {
+  try {
+    const session = renderer.xr.getSession();
+    const viewer = await session.requestReferenceSpace('viewer');
+    hitTestSource = await session.requestHitTestSource({ space: viewer });
+    transientSource = await session.requestHitTestSourceForTransientInput({ profile: 'generic-touchscreen', space: viewer });
+  } catch {
+    hitTestSource = null;
+    transientSource = null;
+  }
+}
 
-const debugPlanes = new Map();      // uid -> Line
+const reticle = new THREE.Sprite(new THREE.SpriteMaterial({ map: ringTexture(), transparent: true, depthTest: false, depthWrite: false }));
+reticle.scale.set(0.28, 0.28, 1);
+reticle.visible = false;
+
+const debugPlanes = new Map();
 let debugGrid = null;
 let debugRay = null;
-let debugRayEnd = null;
 let debugCam = null;
-let debugAxis = null;
+let debugRayEnd = null;
 
 function planeColor(plane) {
-  if (plane.orientation === 'horizontal') return 0x29ff90;   // suelo/techo
-  if (plane.orientation === 'vertical') return 0xff2ef0;     // paredes
+  if (plane.orientation === 'horizontal') return 0x29ff90;
+  if (plane.orientation === 'vertical') return 0xff2ef0;
   return 0x8f9bbf;
 }
 
-function buildDebug() {
-  // Rejilla en el origen (0,0,0) = donde se ancla el mundo GPS.
-  debugGrid = new THREE.GridHelper(10, 10, 0x29ff90, 0x1b5c46);
-  debugGrid.material.transparent = true;
-  debugGrid.material.opacity = 0.5;
-  scene.add(debugGrid);
-
-  // Ejes X (este/rojo) y Z (norte/azul) desde el origen.
-  const axMat = new THREE.LineBasicMaterial({ vertexColors: true });
-  const axGeo = new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(new Float32Array([0, 0.01, 0, 5, 0.01, 0, 0, 0.01, 0, 0, 0.01, -5]), 3));
-  const axCol = new THREE.BufferAttribute(new Float32Array([1, 0, 0, 1, 0, 0, 0, 0.3, 1, 0, 0.3, 1]), 3);
-  axGeo.setAttribute('color', axCol);
-  debugAxis = new THREE.LineSegments(axGeo, axMat);
-  scene.add(debugAxis);
-
-  // Rayo camara -> punto apuntado (verde si hay superficie, rojo si no).
-  debugRay = new THREE.Line(
-    new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(new Float32Array(6), 3)),
-    new THREE.LineBasicMaterial({ transparent: true, opacity: 0.9 })
-  );
-  debugRay.frustumCulled = false;
-  scene.add(debugRay);
-
-  debugRayEnd = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, transparent: true, depthTest: false, depthWrite: false }));
-  debugRayEnd.scale.set(0.12, 0.12, 1);
-  debugRayEnd.frustumCulled = false;
-  scene.add(debugRayEnd);
-
-  // Marca de la camara (blanca).
-  debugCam = new THREE.Mesh(new THREE.SphereGeometry(0.03, 8, 8), new THREE.MeshBasicMaterial({ color: 0xffffff }));
-  scene.add(debugCam);
-}
-
-function updateDebugRay() {
+function updateDebugRay(surfacePos) {
   const from = camera.position;
-  const dir = new THREE.Vector3();
-  camera.getWorldDirection(dir);
-  const to = from.clone().add(dir.multiplyScalar(5));
+  const to = surfacePos || aimPoint(PLACE_DIST);
   const pos = debugRay.geometry.attributes.position;
   pos.setXYZ(0, from.x, from.y, from.z);
   pos.setXYZ(1, to.x, to.y, to.z);
   pos.needsUpdate = true;
-  debugRay.material.color.setHex(0xff3b3b); // sin superficie objetivo: rojo
+  debugRay.material.color.setHex(surfacePos ? 0x29ff90 : 0xff3b3b);
   debugRayEnd.position.copy(to);
 }
 
 function updateDebugPlanes(frame, refSpace) {
-  if (!frame.detectedPlanes) return;
+  if (!frame.detectedPlanes) {
+    debugPlanes.forEach((entry, uid) => {
+      scene.remove(entry.line);
+      debugPlanes.delete(uid);
+    });
+    return;
+  }
   const seen = new Set();
   const tmpP = new THREE.Vector3();
   const tmpQ = new THREE.Quaternion();
@@ -694,8 +307,8 @@ function updateDebugPlanes(frame, refSpace) {
       entry = { line };
       debugPlanes.set(plane.uid, entry);
     }
-    const attrs = entry.line.geometry.attributes;
-    if (!attrs.position || attrs.position.count !== pts.length + 1) {
+    const pos = entry.line.geometry.attributes.position;
+    if (!pos || pos.count !== pts.length + 1) {
       entry.line.geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array((pts.length + 1) * 3), 3));
     }
     for (let i = 0; i < pts.length; i++) {
@@ -716,40 +329,140 @@ function updateDebugPlanes(frame, refSpace) {
   });
 }
 
-function clearDebug() {
+function buildDebug() {
+  debugGrid = new THREE.GridHelper(10, 10, 0x29ff90, 0x1b5c46);
+  debugGrid.material.transparent = true;
+  debugGrid.material.opacity = 0.5;
+  scene.add(debugGrid);
+
+  debugRay = new THREE.Line(
+    new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(new Float32Array(6), 3)),
+    new THREE.LineBasicMaterial({ transparent: true, opacity: 0.9 })
+  );
+  debugRay.frustumCulled = false;
+  scene.add(debugRay);
+
+  debugRayEnd = new THREE.Sprite(new THREE.SpriteMaterial({ map: orbTexture(), transparent: true, depthTest: false, depthWrite: false }));
+  debugRayEnd.scale.set(0.12, 0.12, 1);
+  debugRayEnd.frustumCulled = false;
+  scene.add(debugRayEnd);
+
+  debugCam = new THREE.Mesh(new THREE.SphereGeometry(0.03, 8, 8), new THREE.MeshBasicMaterial({ color: 0xffffff }));
+  scene.add(debugCam);
+}
+
+function onSessionStart() {
+  scene.clear();
+  scene.add(reticle);
   debugPlanes.forEach((entry) => {
-    scene.remove(entry.line);
     entry.line.geometry.dispose();
     entry.line.material.dispose();
   });
   debugPlanes.clear();
-  if (debugGrid) { scene.remove(debugGrid); debugGrid.geometry.dispose(); debugGrid.material.dispose(); debugGrid = null; }
-  if (debugAxis) { scene.remove(debugAxis); debugAxis.geometry.dispose(); debugAxis.material.dispose(); debugAxis = null; }
-  if (debugRay) { scene.remove(debugRay); debugRay.geometry.dispose(); debugRay.material.dispose(); debugRay = null; }
-  if (debugRayEnd) { scene.remove(debugRayEnd); debugRayEnd.material.dispose(); debugRayEnd = null; }
-  if (debugCam) { scene.remove(debugCam); debugCam.geometry.dispose(); debugCam.material.dispose(); debugCam = null; }
+  buildDebug();
+  balloons = 0;
+  placePending = false;
+  hitTestSource = null;
+  transientSource = null;
+  labelWaiting = null;
+  pendingBalloonPos = null;
+  restoreBalloons();
+  hideNamePrompt();
+  countEl.textContent = '';
+  startEl.classList.add('hidden');
+  setupHitTest();
+  renderer.xr.getSession().addEventListener('select', onSelect);
 }
 
+function onSessionEnd() {
+  startEl.classList.remove('hidden');
+  countEl.textContent = balloons ? 'Dejaste ' + balloons + ' etiqueta(s) en el aire' : 'Toca la pantalla en RA para dejar etiquetas';
+}
+
+renderer.xr.addEventListener('sessionstart', onSessionStart);
+renderer.xr.addEventListener('sessionend', onSessionEnd);
+
 renderer.setAnimationLoop(() => {
-  refreshDbg();
-  collectSprites();
-  if (renderer.xr.isPresenting) {
-    const frame = renderer.xr.getFrame();
-    const refSpace = renderer.xr.getReferenceSpace();
-    updateDebugPlanes(frame, refSpace);
-    if (debugRay) updateDebugRay();
-    if (debugCam) debugCam.position.copy(camera.position);
+  if (!renderer.xr.isPresenting) return;
+  const frame = renderer.xr.getFrame();
+  const refSpace = renderer.xr.getReferenceSpace();
+
+  let surfacePos = null;
+
+  if (transientSource) {
+    const tr = frame.getHitTestResultsForTransientInput(transientSource);
+    if (tr.length && tr[0].results.length) {
+      const pose = tr[0].results[0].getPose(refSpace);
+      if (pose) {
+        surfacePos = new THREE.Vector3(pose.transform.position.x, pose.transform.position.y, pose.transform.position.z);
+      }
+    }
   }
+
+  if (!surfacePos && hitTestSource) {
+    const results = frame.getHitTestResults(hitTestSource);
+    if (results.length) {
+      const pose = results[0].getPose(refSpace);
+      if (pose) {
+        surfacePos = new THREE.Vector3(pose.transform.position.x, pose.transform.position.y, pose.transform.position.z);
+      }
+    }
+  }
+
+  if (surfacePos) {
+    reticle.position.copy(surfacePos);
+    reticle.visible = true;
+  } else {
+    reticle.visible = false;
+  }
+
+  updateDebugRay(surfacePos);
+  updateDebugPlanes(frame, refSpace);
+  debugCam.position.copy(camera.position);
+
+  if (placePending) {
+    placePending = false;
+    if (surfacePos) {
+      placeLabel(surfacePos);
+    } else {
+      placeFree();
+    }
+  }
+
   renderer.render(scene, camera);
 });
 
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+const enterBtn = ARButton.createButton(renderer, { optionalFeatures: ['hit-test', 'plane-detection', 'dom-overlay'], domOverlay: { root: overlayRoot } });
+document.getElementById('enter-ar').appendChild(enterBtn);
+
+function neutralButton(ok, label) {
+  enterBtn.removeAttribute('style');
+  enterBtn.onmouseenter = null;
+  enterBtn.onmouseleave = null;
+  enterBtn.textContent = label;
+  enterBtn.classList.toggle('ar-off', !ok);
+}
+
+if ('xr' in navigator && navigator.xr) {
+  navigator.xr.isSessionSupported('immersive-ar').then((ok) => {
+    neutralButton(ok, ok ? '  Comenzar Realidad Aumentada' : 'RA no disponible en este dispositivo');
+  }).catch(() => {});
+} else {
+  neutralButton(false, 'Este navegador no soporta RA');
+}
+
 let toastTimer = null;
 function toast(msg) {
-  const el = $('toast');
-  el.innerHTML = msg;
+  const el = document.getElementById('toast');
+  if (!el) return;
+  el.textContent = msg;
   el.classList.remove('hidden');
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => el.classList.add('hidden'), 2600);
 }
-
-initAR();
