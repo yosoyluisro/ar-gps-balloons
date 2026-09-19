@@ -24,6 +24,8 @@ const nameInput = document.getElementById('label-input');
 const nameOk = document.getElementById('label-ok');
 const overlayRoot = document.getElementById('overlay');
 const qrEl = document.getElementById('qr');
+const versionEl = document.getElementById('version');
+const APP_VERSION = '0.4.0';
 
 function pagesUrl() {
   const h = location.hostname;
@@ -38,6 +40,7 @@ function renderQr() {
   qrEl.innerHTML = qr.createImgTag(5, 2);
 }
 renderQr();
+if (versionEl) versionEl.textContent = 'v' + APP_VERSION;
 
 let balloons = 0;
 let hitTestSource = null;
