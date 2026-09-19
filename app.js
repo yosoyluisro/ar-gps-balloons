@@ -4,6 +4,7 @@ import { ARButton } from 'three/addons/webxr/ARButton.js';
 const ORB = 'rgba(41,255,240,1)';
 const PLACE_DIST = 2.2;
 const FLOAT_ABOVE = 0.2;
+const FLOAT_VEC = new THREE.Vector3(0, FLOAT_ABOVE, 0);
 
 const renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('scene'), antialias: true, alpha: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
@@ -21,6 +22,8 @@ let balloons = 0;
 
 let hitTestSource = null;
 let lastHit = null;
+let anchored = [];
+let placePending = false;
 
 function orbTexture() {
   const c = document.createElement('canvas');
@@ -55,18 +58,25 @@ function aimPoint(dist) {
   return camera.position.clone().add(dir.multiplyScalar(dist));
 }
 
-function placeBalloon() {
+function makeBalloon() {
   const ball = new THREE.Sprite(new THREE.SpriteMaterial({ map: ballTex, transparent: true, depthTest: true, depthWrite: false }));
-  const p = lastHit ? lastHit.clone().add(new THREE.Vector3(0, FLOAT_ABOVE, 0)) : aimPoint(PLACE_DIST);
-  ball.position.copy(p);
   ball.scale.set(0.35, 0.35, 1);
   scene.add(ball);
+  return ball;
+}
+
+function placeFree() {
+  makeBalloon().position.copy(aimPoint(PLACE_DIST));
   balloons++;
 }
 
-const reticle = new THREE.Sprite(new THREE.SpriteMaterial({ map: ringTexture(), transparent: true, depthTest: false, depthWrite: false }));
-reticle.scale.set(0.28, 0.28, 1);
-reticle.visible = false;
+function onSelect() {
+  if (hitTestSource && lastHit) {
+    placePending = true;
+  } else {
+    placeFree();
+  }
+}
 
 async function setupHitTest() {
   try {
@@ -78,16 +88,22 @@ async function setupHitTest() {
   }
 }
 
+const reticle = new THREE.Sprite(new THREE.SpriteMaterial({ map: ringTexture(), transparent: true, depthTest: false, depthWrite: false }));
+reticle.scale.set(0.28, 0.28, 1);
+reticle.visible = false;
+
 function onSessionStart() {
   scene.clear();
   scene.add(reticle);
   balloons = 0;
+  anchored = [];
   lastHit = null;
+  placePending = false;
   hitTestSource = null;
   countEl.textContent = '';
   startEl.classList.add('hidden');
   setupHitTest();
-  renderer.xr.getSession().addEventListener('select', placeBalloon);
+  renderer.xr.getSession().addEventListener('select', onSelect);
 }
 
 function onSessionEnd() {
@@ -100,13 +116,27 @@ renderer.xr.addEventListener('sessionend', onSessionEnd);
 
 renderer.setAnimationLoop(() => {
   if (!renderer.xr.isPresenting) return;
+  const frame = renderer.xr.getFrame();
+  const refSpace = renderer.xr.getReferenceSpace();
+
   if (hitTestSource) {
-    const results = renderer.xr.getFrame().getHitTestResults(hitTestSource);
+    const results = frame.getHitTestResults(hitTestSource);
     if (results.length) {
-      const pose = results[0].getPose(renderer.xr.getReferenceSpace());
+      const pose = results[0].getPose(refSpace);
       lastHit = new THREE.Vector3(pose.transform.position.x, pose.transform.position.y, pose.transform.position.z);
       reticle.position.copy(lastHit);
       reticle.visible = true;
+      if (placePending) {
+        placePending = false;
+        const ball = makeBalloon();
+        ball.position.copy(lastHit).add(FLOAT_VEC);
+        balloons++;
+        if (typeof results[0].createAnchor === 'function') {
+          results[0].createAnchor().then((anchor) => {
+            anchored.push({ anchor, ball });
+          }).catch(() => {});
+        }
+      }
     } else {
       reticle.visible = false;
     }
@@ -115,6 +145,14 @@ renderer.setAnimationLoop(() => {
     reticle.position.copy(aimPoint(PLACE_DIST));
     reticle.visible = true;
   }
+
+  for (const { anchor, ball } of anchored) {
+    const pose = frame.getPose(anchor.anchorSpace, refSpace);
+    if (pose) {
+      ball.position.set(pose.transform.position.x, pose.transform.position.y + FLOAT_ABOVE, pose.transform.position.z);
+    }
+  }
+
   renderer.render(scene, camera);
 });
 
@@ -124,7 +162,7 @@ window.addEventListener('resize', () => {
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
 
-const enterBtn = ARButton.createButton(renderer, { optionalFeatures: ['hit-test'] });
+const enterBtn = ARButton.createButton(renderer, { optionalFeatures: ['hit-test', 'anchors'] });
 document.getElementById('enter-ar').appendChild(enterBtn);
 
 function neutralButton(ok, label) {
