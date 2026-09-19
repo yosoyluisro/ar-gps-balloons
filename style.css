@@ -25,7 +25,7 @@ html, body {
 
 #scene { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
 
-/* Raíz del DOM Overlay de WebXR: todo lo que debe verse/tocarse en AR vive aquí.
+/* Raiz del DOM Overlay de WebXR: todo lo que debe verse/tocarse en AR vive aqui.
    Sin z-index/filtros/transform para no crear stacking context; con pointer-events
    none para que los toques sobre zonas transparentes caigan al mundo (evento XR
    "select"). Los hijos interactivos re-activan pointer-events. */
@@ -62,12 +62,12 @@ button { font-family: inherit; }
   list-style: none; text-align: left; margin: 10px 0 14px;
   color: var(--dim); font-size: 13px; line-height: 1.6;
 }
-.hint li::before { content: "• "; color: var(--accent); }
+.hint li::before { content: "* "; color: var(--accent); }
 .status { color: var(--dim); font-size: 12px; margin-top: 10px; }
 #enter-ar { margin-top: 8px; }
 
 /* ARButton inyecta estilos inline (position:absolute, opacidad .5, ...) y reescribe el
-   texto. Los anulamos con !important; el diseño manda. Cubre el <button> y el <a> que
+   texto. Los anulamos con !important; el diseno manda. Cubre el <button> y el <a> que
    devuelve ARButton cuando no hay navigator.xr. */
 #enter-ar button, #enter-ar a {
   width: 100% !important;
@@ -149,7 +149,7 @@ button { font-family: inherit; }
 .dbg { color: var(--accent); font-size: 12px; margin-top: 6px; font-variant-numeric: tabular-nums; }
 
 /* HUD en pantallas estrechas: el CTA pasa a su propia fila completa y los cuatro
-   botones de ajustes quedan abajo (evita aplastar el botón principal). */
+   botones de ajustes quedan abajo (evita aplastar el boton principal). */
 @media (max-width: 480px) {
   #hud .row { gap: 6px; }
   #hud .btn-accent { flex: 1 1 100%; }
@@ -234,7 +234,7 @@ button { font-family: inherit; }
   color: var(--dim); font-size: 12px; margin: 4px 0 12px;
 }
 
-/* ---- edición de globos ---- */
+/* ---- edicion de globos ---- */
 .edit-actions { margin-bottom: 8px; gap: 6px; flex-wrap: wrap; }
 .edit-actions .btn { flex: 1; min-width: 72px; font-size: 13px; padding: 9px 6px; }
 .btn-danger { background: rgba(255,87,87,0.16); color: var(--danger); border-color: rgba(255,87,87,0.35); }

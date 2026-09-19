@@ -1,5 +1,5 @@
-﻿// geo.js ÔÇö utilidades geogr├íficas puras (sin dependencias).
-// Convenci├│n de salida: east/north en metros. North = eje apuntando a +latitud, east = +longitud.
+// geo.js - utilidades geograficas puras (sin dependencias).
+// Convencion de salida: east/north en metros. North = eje apuntando a +latitud, east = +longitud.
 
 const R = 6371000; // radio medio de la Tierra (m)
 export const DEG2RAD = Math.PI / 180;
@@ -13,7 +13,7 @@ export function radToDeg(r) {
   return r * RAD2DEG;
 }
 
-// Distancia real entre dos puntos (f├│rmula de haversine), en metros.
+// Distancia real entre dos puntos (formula de haversine), en metros.
 export function haversineMeters(lat0, lng0, lat1, lng1) {
   const f1 = degToRad(lat0);
   const f2 = degToRad(lat1);
@@ -23,7 +23,7 @@ export function haversineMeters(lat0, lng0, lat1, lng1) {
   return 2 * R * Math.asin(Math.sqrt(a));
 }
 
-// Descomposici├│n en metros locales (proyecci├│n equirectangular, exacta en <10 km):
+// Descomposicion en metros locales (proyeccion equirectangular, exacta en <10 km):
 // { east, north } = desplazamiento desde (lat0,lng0) hasta (lat1,lng1).
 export function deltaMeters(lat0, lng0, lat1, lng1) {
   const f0 = degToRad(lat0);

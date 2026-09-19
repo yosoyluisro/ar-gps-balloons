@@ -24,14 +24,14 @@ let store = loadStore();
 let balloons = store.balloons;
 
 let origin = null;            // { lat, lng, alt, accuracy }
-let orientation = null;       // último evento deviceorientation
+let orientation = null;       // ultimo evento deviceorientation
 let headingNudgeDeg = store.prefs.headingNudgeDeg || 0;
-let pendingPos = null;        // posición capturada al pulsar "Dejar globo aquí"
+let pendingPos = null;        // posicion capturada al pulsar "Dejar globo aqui"
 let arOn = false;
 let enterARButton = null;
-let arSession = null;         // sesión XR activa (para eventos select)
+let arSession = null;         // sesion XR activa (para eventos select)
 let lastSelectAt = 0;
-let mode = 'reg';             // 'reg' = Registrar · 'view' = Solo visualizar
+let mode = 'reg';             // 'reg' = Registrar - 'view' = Solo visualizar
 
 /* ---------------- almacenamiento ---------------- */
 
@@ -55,11 +55,11 @@ function save() {
   }
 }
 
-/* ---------------- GPS y brújula ---------------- */
+/* ---------------- GPS y brujula ---------------- */
 
 function requestPosition() {
   return new Promise((resolve, reject) => {
-    if (!navigator.geolocation) return reject(new Error('geolocalización no soportada'));
+    if (!navigator.geolocation) return reject(new Error('geolocalizacion no soportada'));
     const t = setTimeout(() => reject(new Error('timeout')), 15000);
     navigator.geolocation.getCurrentPosition(
       (p) => { clearTimeout(t); resolve(p); },
@@ -70,7 +70,7 @@ function requestPosition() {
 }
 
 // KISS: si el GPS falla, caemos al origen ya fijado (o al local 0,0,0) para que
-// colocar globos y dibujarlos funcione siempre, sin depender de la señal.
+// colocar globos y dibujarlos funcione siempre, sin depender de la senal.
 function currentPosition() {
   return requestPosition().catch(() => {
     if (origin) return { coords: origin };
@@ -87,9 +87,9 @@ function setOrigin(p) {
   };
 }
 
-// Azimut horizontal de la parte trasera del celular (donde apunta la cámara), 0..360 (0 = norte).
+// Azimut horizontal de la parte trasera del celular (donde apunta la camara), 0..360 (0 = norte).
 // alpha/beta/gamma vienen de DeviceOrientation; se convierte el eje -Z del dispositivo a la
-// terna de referencia de la especificación (X=este, Y=norte, Z=arriba) y se proyecta en plano XY.
+// terna de referencia de la especificacion (X=este, Y=norte, Z=arriba) y se proyecta en plano XY.
 function deviceHeadingDeg() {
   if (!orientation) return 0;
   const o = orientation;
@@ -104,7 +104,7 @@ function deviceHeadingDeg() {
 
 function updatePivot() {
   // El globo "al norte" se coloca en -Z; rotar el mundo con el azimut inicial del celular
-  // deja el norte geográfico alineado con el norte del espacio de la sesión.
+  // deja el norte geografico alineado con el norte del espacio de la sesion.
   pivot.rotation.y = degToRad(deviceHeadingDeg() + headingNudgeDeg);
 }
 
@@ -206,18 +206,18 @@ function renderWorld() {
   for (const b of balloons) addBalloonSprite(b);
 }
 
-/* ---------------- UI / sesión ---------------- */
+/* ---------------- UI / sesion ---------------- */
 
 function showStatus() {
   const sb = $('status-line');
   if (!origin) {
-    sb.textContent = 'Globos: ' + balloons.length + ' · sin GPS';
+    sb.textContent = 'Globos: ' + balloons.length + ' - sin GPS';
     $('dbg').classList.add('hidden');
     return;
   }
   $('dbg').classList.remove('hidden');
-  sb.textContent = 'Globos: ' + balloons.length + ' · precisión: ' + (origin.accuracy ? origin.accuracy.toFixed(0) + ' m' : 'n/d');
-  if (origin.accuracy && origin.accuracy > 20) toast('⚠ Precisión baja (' + origin.accuracy.toFixed(0) + ' m)');
+  sb.textContent = 'Globos: ' + balloons.length + ' - precision: ' + (origin.accuracy ? origin.accuracy.toFixed(0) + ' m' : 'n/d');
+  if (origin.accuracy && origin.accuracy > 20) toast('<i class="fa-solid fa-triangle-exclamation"></i> Precision baja (' + origin.accuracy.toFixed(0) + ' m)');
 }
 
 function setMode(m) {
@@ -227,7 +227,7 @@ function setMode(m) {
   $('mode-view').classList.toggle('active', !isReg);
   const btnMode = $('btn-mode');
   if (btnMode) btnMode.innerHTML = isReg ? '<i class="fa-solid fa-folder-open"></i> Registrar' : '<i class="fa-solid fa-eye"></i> Solo visualizar';
-  if (arOn) toast(isReg ? 'Modo Registrar · toca para dejar globos' : 'Modo Solo visualizar · no se dejan globos');
+  if (arOn) toast(isReg ? 'Modo Registrar - toca para dejar globos' : 'Modo Solo visualizar - no se dejan globos');
 }
 
 function onSessionStart() {
@@ -246,7 +246,7 @@ function onSessionStart() {
     updatePivot();
     renderWorld();
     showStatus();
-    toast(p ? '<i class="fa-solid fa-satellite-dish"></i> Origin GPS fijado · deja tu primer globo' : '<i class="fa-solid fa-triangle-exclamation"></i> Sin GPS: los globos se fijan cerca de ti');
+    toast(p ? '<i class="fa-solid fa-satellite-dish"></i> Origin GPS fijado - deja tu primer globo' : '<i class="fa-solid fa-triangle-exclamation"></i> Sin GPS: los globos se fijan cerca de ti');
   })();
 }
 
@@ -269,7 +269,7 @@ function initAR() {
     domOverlay: { root: $('xr-overlay') }
   });
 
-  // ARButton inyecta estilos inline (posición absoluta, opacidad 0.5, fuente 13px, etc.)
+  // ARButton inyecta estilos inline (posicion absoluta, opacidad 0.5, fuente 13px, etc.)
   // y reescribe el texto ("AR NOT SUPPORTED" / "START AR"). Los neutralizamos: la
   // apariencia la controla style.css.
   enterARButton.removeAttribute('style');
@@ -277,7 +277,7 @@ function initAR() {
   enterARButton.onmouseleave = null;
 
   $('enter-ar').appendChild(enterARButton);
-  enterARButton.textContent = '▶  Comenzar Realidad Aumentada';
+  enterARButton.textContent = '  Comenzar Realidad Aumentada';
   enterARButton.addEventListener('click', () => requestOrientationPermission());
   renderer.xr.addEventListener('sessionstart', onSessionStart);
   renderer.xr.addEventListener('sessionend', onSessionEnd);
@@ -294,14 +294,14 @@ function initAR() {
       status.textContent = 'Error al comprobar WebXR';
     });
   } else {
-    // Sin navigator.xr (escritorio/antiguo): ARButton devuelve un enlace, no un botón.
+    // Sin navigator.xr (escritorio/antiguo): ARButton devuelve un enlace, no un boton.
     enterARButton.textContent = 'Este navegador no soporta RA';
     enterARButton.classList.add('ar-off');
     status.textContent = 'Este navegador no soporta RA. Usa Chrome/Android o Safari/iPhone recientes.';
   }
 }
 
-// iOS requiere permiso explícito para DeviceOrientation.
+// iOS requiere permiso explicito para DeviceOrientation.
 function requestOrientationPermission() {
   return new Promise((resolve) => {
     const D = window.DeviceOrientationEvent;
@@ -324,7 +324,7 @@ function onOrientation(e) {
 /* ---------------- colocar globo ---------------- */
 
 const raycaster = new THREE.Raycaster();
-const editBalloonSprites = new Map(); // id → { spr, glow } (solo los visibles en el frame)
+const editBalloonSprites = new Map(); // id -> { spr, glow } (solo los visibles en el frame)
 
 function collectSprites() {
   editBalloonSprites.clear();
@@ -344,7 +344,7 @@ function findHitBalloon() {
   return hit.object.userData.id || null;
 }
 
-// Toque directo sobre la cámara (gesto XR "select"): si toca un globo, abre su edición;
+// Toque directo sobre la camara (gesto XR "select"): si toca un globo, abre su edicion;
 // si no, en modo Registrar abre el colocador.
 function onXRSelect() {
   if (!arOn || !origin) return;
@@ -362,7 +362,7 @@ function onXRSelect() {
       renderWorld();
       showStatus();
       toast('<i class="fa-solid fa-crosshairs"></i> Globo movido a tu GPS actual');
-    }).catch(() => toast('<i class="fa-solid fa-satellite-dish"></i> No se pudo leer la posición'));
+    }).catch(() => toast('<i class="fa-solid fa-satellite-dish"></i> No se pudo leer la posicion'));
     return;
   }
   const bid = findHitBalloon();
@@ -380,7 +380,7 @@ function openEdit(id) {
   if (!b) return;
   editingId = id;
   $('edit-title').textContent = (b.name || 'Globo');
-  $('edit-info').textContent = 'Lat ' + b.lat.toFixed(6) + ' · Lng ' + b.lng.toFixed(6) + (b.createdAt ? ' · ' + new Date(b.createdAt).toLocaleString() : '');
+  $('edit-info').textContent = 'Lat ' + b.lat.toFixed(6) + ' - Lng ' + b.lng.toFixed(6) + (b.createdAt ? ' - ' + new Date(b.createdAt).toLocaleString() : '');
   $('edit-modal').classList.remove('hidden');
 }
 
@@ -442,21 +442,21 @@ let pendingMoveId = null;
 
 function openPlacer() {
   if (!arOn) return toast('Entra a Realidad Aumentada');
-  if (mode === 'view') return toast('<i class="fa-solid fa-eye"></i> Modo Solo visualizar · no puedes dejar globos');
-  if (!origin) return toast('<i class="fa-solid fa-satellite-dish"></i> Sin GPS: no hay dónde anclar el globo');
+  if (mode === 'view') return toast('<i class="fa-solid fa-eye"></i> Modo Solo visualizar - no puedes dejar globos');
+  if (!origin) return toast('<i class="fa-solid fa-satellite-dish"></i> Sin GPS: no hay donde anclar el globo');
   currentPosition().then((p) => {
     pendingPos = p;
     $('input-name').value = '';
     $('modal').classList.remove('hidden');
     setTimeout(() => $('input-name').focus(), 120);
-  }).catch(() => toast('<i class="fa-solid fa-satellite-dish"></i> No se pudo leer la posición'));
+  }).catch(() => toast('<i class="fa-solid fa-satellite-dish"></i> No se pudo leer la posicion'));
 }
 
 function commitPlace() {
   if (mode === 'view') {
     $('modal').classList.add('hidden');
     pendingPos = null;
-    return toast('<i class="fa-solid fa-eye"></i> Modo Solo visualizar · no puedes dejar globos');
+    return toast('<i class="fa-solid fa-eye"></i> Modo Solo visualizar - no puedes dejar globos');
   }
   if (!pendingPos || !origin) return;
   const name = $('input-name').value.trim();
@@ -508,7 +508,7 @@ function importScene(file) {
       showStatus();
       toast('<i class="fa-solid fa-file-import"></i> Importados ' + balloons.length + ' globos');
     } catch {
-      toast('Archivo inválido');
+      toast('Archivo invalido');
     }
     $('import-file').value = '';
   };
@@ -539,7 +539,7 @@ $('import-file').addEventListener('change', (e) => {
   if (f) importScene(f);
 });
 
-// ---- edición de globos ----
+// ---- edicion de globos ----
 $('btn-edit-rename').addEventListener('click', renameEditingBalloon);
 $('btn-edit-move').addEventListener('click', moveEditingBalloon);
 $('btn-edit-delete').addEventListener('click', deleteEditingBalloon);
@@ -554,14 +554,14 @@ $('btn-nudgel').addEventListener('click', () => {
   updatePivot();
   save();
   refreshDbg();
-  toast('<i class="fa-solid fa-rotate-left"></i> Mundo rotado −1° (total ' + headingNudgeDeg + '°)');
+  toast('<i class="fa-solid fa-rotate-left"></i> Mundo rotado -1 (total ' + headingNudgeDeg + ')');
 });
 $('btn-nudger').addEventListener('click', () => {
   headingNudgeDeg += 1;
   updatePivot();
   save();
   refreshDbg();
-  toast('Mundo rotado +1° (total ' + headingNudgeDeg + '°)');
+  toast('<i class="fa-solid fa-rotate-right"></i> Mundo rotado +1 (total ' + headingNudgeDeg + ')');
 });
 
 window.addEventListener('pointerdown', (e) => {
@@ -581,14 +581,14 @@ function refreshDbg() {
   const dbg = $('dbg');
   if (dbg.classList.contains('hidden')) return;
   dbg.textContent =
-    'az ' + deviceHeadingDeg().toFixed(0) + '° · nudge ' + headingNudgeDeg + '°' +
-    ' · planos ' + debugPlanes.size +
-    (origin ? ' · origen: ' + origin.lat.toFixed(5) + ', ' + origin.lng.toFixed(5) : '');
+    'az ' + deviceHeadingDeg().toFixed(0) + ' - nudge ' + headingNudgeDeg +
+    ' - planos ' + debugPlanes.size +
+    (origin ? ' - origen: ' + origin.lat.toFixed(5) + ', ' + origin.lng.toFixed(5) : '');
 }
 
 /* ---------------- debug visual (siempre encendido) ---------------- */
 
-const debugPlanes = new Map();      // uid → Line
+const debugPlanes = new Map();      // uid -> Line
 let debugGrid = null;
 let debugRay = null;
 let debugRayEnd = null;
@@ -616,7 +616,7 @@ function buildDebug() {
   debugAxis = new THREE.LineSegments(axGeo, axMat);
   scene.add(debugAxis);
 
-  // Rayo cámara → punto apuntado (verde si hay superficie, rojo si no).
+  // Rayo camara -> punto apuntado (verde si hay superficie, rojo si no).
   debugRay = new THREE.Line(
     new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(new Float32Array(6), 3)),
     new THREE.LineBasicMaterial({ transparent: true, opacity: 0.9 })
@@ -629,7 +629,7 @@ function buildDebug() {
   debugRayEnd.frustumCulled = false;
   scene.add(debugRayEnd);
 
-  // Marca de la cámara (blanca).
+  // Marca de la camara (blanca).
   debugCam = new THREE.Mesh(new THREE.SphereGeometry(0.03, 8, 8), new THREE.MeshBasicMaterial({ color: 0xffffff }));
   scene.add(debugCam);
 }
