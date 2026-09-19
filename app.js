@@ -23,6 +23,21 @@ const nameOverlay = document.getElementById('overlay-label');
 const nameInput = document.getElementById('label-input');
 const nameOk = document.getElementById('label-ok');
 const overlayRoot = document.getElementById('overlay');
+const qrEl = document.getElementById('qr');
+
+function pagesUrl() {
+  const h = location.hostname;
+  return h.endsWith('github.io') ? location.origin + location.pathname : 'https://yosoyluisro.github.io/ar-gps-balloons/';
+}
+
+function renderQr() {
+  if (!qrEl || typeof qrcode !== 'function') return;
+  const qr = qrcode(0, 'M');
+  qr.addData(pagesUrl());
+  qr.make();
+  qrEl.innerHTML = qr.createImgTag(5, 2);
+}
+renderQr();
 
 let balloons = 0;
 let hitTestSource = null;

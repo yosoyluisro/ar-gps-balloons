@@ -8,7 +8,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <title>AR Balloons</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%8E%88%3C/text%3E%3C/svg%3E">
-  <link rel="stylesheet" href="style.css?v=4">
+  <link rel="stylesheet" href="style.css?v=5">
   <script type="importmap">
     {
       "imports": {
@@ -29,6 +29,7 @@
       <p>Toca el objeto que quieras etiquetar (TV, cama, conector…) y escribe su nombre: queda fijo en ese lugar.</p>
       <div id="enter-ar"></div>
       <p id="count" class="status"></p>
+      <div id="qr"></div>
     </div>
   </div>
 
@@ -42,6 +43,7 @@
   </div>
 </div>
 
-  <script type="module" src="app.js?v=10"></script>
+  <script src="https://unpkg.com/qrcode-generator@1.4.4/qrcode.js"></script>
+  <script type="module" src="app.js?v=11"></script>
 </body>
 </html>

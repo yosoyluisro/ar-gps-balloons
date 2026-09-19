@@ -1,21 +1,23 @@
-# 🎈 AR GPS Balloons
+# 🎈 AR Balloons
 
-Deja **globos informativos flotando en Realidad Aumentada**, anclados a tu **posición GPS real**.
-Colocas un globo (nombre, icono, color, nota) en el lugar donde estás; al volver al mismo sitio,
-los globos aparecen donde los dejaste, en su ubicación geográfica.
+Deja **etiquetas flotantes en Realidad Aumentada**, ancladas a **superficies reales** (mesa,
+pared, piso, electrodomésticos…). Toca el objeto que quieras etiquetar, escribe su nombre y
+queda fijo en ese lugar flotando a poca altura.
 
-- **Sin cuentas, sin nube, sin API keys, sin costo**: todo queda en tu navegador y sale en un JSON de respaldo.
-- **100 % web**: Vanilla JS + Three.js (CDN) + WebXR. Nada que instalar en el celular.
+- **Sin cuentas, sin nube, sin API keys, sin costo**: 100 % web, nada de backend.
+- **Vanilla JS + Three.js (CDN) + WebXR**: las etiquetas se anclan al mundo real con
+  *hit-test* de superficie (se detectan con la cámara del celular).
+- Los globos viven **solo durante la sesión**: al cerrar la app se pierden (sin persistencia).
 
-> ⚠️ La **precisión es la del GPS del celular (~5–10 m)** y la alineación con la brújula se puede
-> calibrar manualmente (±1°). No se usa ARCore Geospatial: esto es una app **gratuita**, no de
-> posicionamiento milimétrico. Detalles en `REQUERIMIENTOS.md`.
+> ⚠️ La calidad de la anclación depende del *hit-test* del dispositivo (ARCore en Android,
+> ARKit en iPhone): necesita una superficie detectable e iluminación decente. No se usa
+> ARCore Geospatial ni anclas persistentes.
 
 ## Requisitos del celular
 
 - **Android**: Chrome reciente + **ARCore** instalado.
 - **iPhone**: Safari 17+ con ARKit.
-- WebXR (AR) solo funciona por **HTTPS** y necesita **señal GPS**.
+- WebXR (AR) solo funciona por **HTTPS** y con cámara trasera.
 
 ## Arrancar el servidor
 
@@ -33,40 +35,28 @@ Es un túnel HTTPS público hacia tu PC; no hay que instalar nada en el teléfon
 
 ## Cómo usar
 
-1. **▶ Comenzar Realidad Aumentada** → se piden permisos de cámara y de ubicación.
-   El origen del mundo queda anclado a tu **GPS actual**.
-2. **📍 Dejar globo aquí** (o toca la pantalla) → escribe el nombre → el globo queda fijado
-   a tu posición GPS, flotando a 1.6 m.
-3. **⟲ / ⟳** rotan el mundo ±1° para calibrar la brújula si algo no apunta bien.
-4. **⤓ / ⤒** exportan/importan tu respaldo JSON.
+1. **▶ Comenzar Realidad Aumentada** → se pide permiso de cámara y se abre la sesión WebXR.
+2. Toca una superficie en pantalla (o pulsa) → se coloca un globo con el retículo de anclaje.
+3. Escribe el nombre en el cuadro → el globo queda fijo en ese lugar, con su etiqueta flotando.
+4. Repite para dejar todas las etiquetas que quieras; sal y vuelve a entrar para recargar.
+
+> Los nombres por defecto son `Globo 1`, `Globo 2`, … y el contador se reinicia en cada sesión.
 
 ## Estructura
 
 ```
-REQUERIMIENTOS.md   # especificación técnica y roadmap de sprints
-geo.js              # utilidades geográficas puras (haversine, deltas, rumbo)
-app.js              # lógica principal (Three.js + WebXR + GPS + brújula)
+REQUERIMIENTOS.md   # especificación técnica del estado actual
+app.js              # lógica principal (Three.js + WebXR + hit-test + etiquetas)
 index.html          # interfaz
 style.css           # estilos
 servir.ps1          # servidor local + túnel HTTPS
-test/geo.test.js    # tests de geo.js (Node, sin dependencias) → npm test
+.github/workflows/  # deploy de GitHub Pages
 ```
 
-## Tests
+## Algunos detalles
 
-```powershell
-npm test
-```
-
-## Roadmap
-
-- **Sprint 1 (hecho)**: ciclo básico — colocar globo en tu GPS actual y verlo reaparecer en AR.
-- **Sprint 2**: gestión completa — lista con editar/borrar, editor completo (nota/icono/color/altura), re-anclar origen, modo 3D escritorio.
-- **Sprint 3**: calibración de precisión y pulido.
-
-## Honestidad técnica
-
-- El GPS es **aproximado** (~5–10 m). Los globos son **coordenadas geográficas reales**, no poses de cámara.
-- La altitud GPS es poco fiable: los globos se muestran a altura fija sobre el origen.
-- Entre sesiones, estando en el mismo punto, los globos reaparecen donde se dejaron; si no, "Re-anclar a mi posición" (Sprint 2) los recoloca.
-- Los datos viven en `localStorage` (clave `argps.v1`): usa ⤓ para respaldar.
+- El pinneado es de tipo "world-locked": que no se pierda con el movimiento lo decide el
+  *hit-test* del dispositivo (sin anclas WebXR persistentes, se usa `local` reference space).
+- La altura de la etiqueta sobre la superficie y la separación con el globo están fijadas en
+  `app.js` (`FLOAT_ABOVE`, `LABEL_GAP`, `LABEL_H`).
+- No hay guardado: al cerrar la pestaña las etiquetas desaparecen.

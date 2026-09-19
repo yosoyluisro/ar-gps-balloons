@@ -59,6 +59,16 @@ button { font-family: inherit; }
 .card h1 { font-size: 22px; margin-bottom: 6px; }
 .card p { color: var(--dim); font-size: 14px; line-height: 1.45; margin-bottom: 12px; }
 .status { color: var(--dim); font-size: 12px; margin-top: 12px; }
+#qr { margin-top: 14px; }
+#qr img {
+  display: block;
+  margin: 0 auto;
+  width: 150px;
+  height: 150px;
+  padding: 10px;
+  background: #fff;
+  border-radius: 10px;
+}
 #enter-ar { margin-top: 8px; }
 .card.small { padding: 18px 16px; }
 #overlay {
