@@ -10,7 +10,7 @@
   <title>AR GPS Balloons</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle cx='50' cy='40' r='30' fill='%2329fff0'/%3E%3Cpath d='M42 68 L58 68 L50 84 Z' fill='%2329fff0'/%3E%3Cpath d='M50 84 Q58 92 52 98' stroke='%2329fff0' fill='none' stroke-width='3'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
-  <link rel="stylesheet" href="style.css?v=5">
+  <link rel="stylesheet" href="style.css?v=6">
   <script type="importmap">
     {
       "imports": {
@@ -99,12 +99,14 @@
       <p class="mode-help">Registrar deja globos; Solo visualizar solo los muestra.</p>
       <div id="enter-ar"></div>
       <p id="xr-status" class="status"></p>
+      <div id="qr" class="qr-box"></div>
       <p id="version" class="version-badge"></p>
     </div>
   </div>
 
   <input id="import-file" type="file" accept="application/json,.json" class="hidden">
 
-  <script type="module" src="app.js?v=5"></script>
+  <script src="https://unpkg.com/qrcode-generator@1.4.4/qrcode.js"></script>
+  <script type="module" src="app.js?v=6"></script>
 </body>
 </html>

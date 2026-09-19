@@ -7,7 +7,7 @@ const ALT_OFFSET = 1.6;        // altura de los globos sobre el nivel de origen 
 const DEFAULT_COLOR = '#29fff0';
 const IGNORED = 'button,input,select,textarea,.modal,.toast,.panel,.hud-top,.status-bar,.dbg';
 
-const APP_VERSION = '0.4.1';
+const APP_VERSION = '0.4.2';
 
 const $ = (id) => document.getElementById(id);
 
@@ -19,6 +19,21 @@ function renderVersion() {
   if (hud) hud.textContent = v;
 }
 renderVersion();
+
+function pagesUrl() {
+  const h = location.hostname;
+  return h.endsWith('github.io') ? location.origin + location.pathname : 'https://yosoyluisro.github.io/ar-gps-balloons/';
+}
+
+function renderQr() {
+  const el = $('qr');
+  if (!el || typeof qrcode !== 'function') return;
+  const qr = qrcode(0, 'M');
+  qr.addData(pagesUrl());
+  qr.make();
+  el.innerHTML = qr.createImgTag(4, 2);
+}
+renderQr();
 
 const renderer = new THREE.WebGLRenderer({ canvas: $('scene'), antialias: true, alpha: true });
 renderer.setSize(window.innerWidth, window.innerHeight);

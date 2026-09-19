@@ -260,3 +260,18 @@ button { font-family: inherit; }
   margin-left: 6px;
   font-variant-numeric: tabular-nums;
 }
+
+/* ---- QR ---- */
+.qr-box {
+  margin: 14px auto 4px;
+  padding: 8px;
+  background: #fff;
+  border-radius: 10px;
+  display: inline-flex;
+  line-height: 0;
+}
+.qr-box img {
+  width: 140px;
+  height: 140px;
+  display: block;
+}
