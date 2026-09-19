@@ -33,6 +33,7 @@
 
       <section class="panel">
         <div class="row">
+          <button id="btn-mode" class="btn" title="Cambiar modo">🗂 Registrar</button>
           <button id="btn-place" class="btn btn-accent">📍 Dejar globo aquí</button>
           <button id="btn-nudgel" class="btn" title="Rotar mundo -1°">⟲ −1°</button>
           <button id="btn-nudger" class="btn" title="Rotar mundo +1°">+1° ⟳</button>
@@ -68,6 +69,11 @@
         <li>2 · El globo queda en tu GPS actual</li>
         <li>3 · Camina y vuelve: el globo te espera</li>
       </ul>
+      <div id="mode-select" class="mode-select">
+        <button id="mode-reg" type="button" class="mode-btn active">📍 Registrar</button>
+        <button id="mode-view" type="button" class="mode-btn">👁 Solo visualizar</button>
+      </div>
+      <p class="mode-help">Registrar deja globos; Solo visualizar solo los muestra.</p>
       <div id="enter-ar"></div>
       <p id="xr-status" class="status"></p>
     </div>

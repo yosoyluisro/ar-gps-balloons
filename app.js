@@ -32,6 +32,7 @@ let arOn = false;
 let enterARButton = null;
 let arSession = null;         // sesión XR activa (para eventos select)
 let lastSelectAt = 0;
+let mode = 'reg';             // 'reg' = Registrar · 'view' = Solo visualizar
 
 /* ---------------- almacenamiento ---------------- */
 
@@ -190,6 +191,16 @@ function showStatus() {
   if (origin.accuracy && origin.accuracy > 20) toast('⚠ Precisión baja (' + origin.accuracy.toFixed(0) + ' m)');
 }
 
+function setMode(m) {
+  mode = m;
+  const isReg = m === 'reg';
+  $('mode-reg').classList.toggle('active', isReg);
+  $('mode-view').classList.toggle('active', !isReg);
+  const btnMode = $('btn-mode');
+  if (btnMode) btnMode.textContent = isReg ? '🗂 Registrar' : '👁 Solo visualizar';
+  if (arOn) toast(isReg ? 'Modo Registrar · toca para dejar globos' : 'Modo Solo visualizar · no se dejan globos');
+}
+
 function onSessionStart() {
   arOn = true;
   $('overlay-start').classList.add('hidden');
@@ -292,6 +303,7 @@ function onXRSelect() {
 
 function openPlacer() {
   if (!arOn) return toast('Entra a Realidad Aumentada');
+  if (mode === 'view') return toast('Modo Solo visualizar · no puedes dejar globos 👁');
   if (!origin) return toast('Sin GPS: no hay dónde anclar el globo 📡');
   currentPosition().then((p) => {
     pendingPos = p;
@@ -302,6 +314,11 @@ function openPlacer() {
 }
 
 function commitPlace() {
+  if (mode === 'view') {
+    $('modal').classList.add('hidden');
+    pendingPos = null;
+    return toast('Modo Solo visualizar · no puedes dejar globos 👁');
+  }
   if (!pendingPos || !origin) return;
   const name = $('input-name').value.trim();
   if (!name) return toast('Ponle un nombre al globo');
@@ -362,6 +379,9 @@ function importScene(file) {
 /* ---------------- eventos ---------------- */
 
 $('btn-place').addEventListener('click', openPlacer);
+$('btn-mode').addEventListener('click', () => setMode(mode === 'reg' ? 'view' : 'reg'));
+$('mode-reg').addEventListener('click', () => setMode('reg'));
+$('mode-view').addEventListener('click', () => setMode('view'));
 $('btn-modal-ok').addEventListener('click', commitPlace);
 $('input-name').addEventListener('keydown', (e) => {
   if (e.key === 'Enter') {
