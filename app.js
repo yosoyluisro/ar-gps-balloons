@@ -207,9 +207,110 @@ const reticle = new THREE.Sprite(new THREE.SpriteMaterial({ map: ringTexture(), 
 reticle.scale.set(0.28, 0.28, 1);
 reticle.visible = false;
 
+const debugPlanes = new Map();
+let debugGrid = null;
+let debugRay = null;
+let debugCam = null;
+let debugRayEnd = null;
+
+function planeColor(plane) {
+  if (plane.orientation === 'horizontal') return 0x29ff90;
+  if (plane.orientation === 'vertical') return 0xff2ef0;
+  return 0x8f9bbf;
+}
+
+function updateDebugRay(surfacePos) {
+  const from = camera.position;
+  const to = surfacePos || aimPoint(PLACE_DIST);
+  const pos = debugRay.geometry.attributes.position;
+  pos.setXYZ(0, from.x, from.y, from.z);
+  pos.setXYZ(1, to.x, to.y, to.z);
+  pos.needsUpdate = true;
+  debugRay.material.color.setHex(surfacePos ? 0x29ff90 : 0xff3b3b);
+  debugRayEnd.position.copy(to);
+}
+
+function updateDebugPlanes(frame, refSpace) {
+  if (!frame.detectedPlanes) {
+    debugPlanes.forEach((entry, uid) => {
+      scene.remove(entry.line);
+      debugPlanes.delete(uid);
+    });
+    return;
+  }
+  const seen = new Set();
+  const tmpP = new THREE.Vector3();
+  const tmpQ = new THREE.Quaternion();
+  frame.detectedPlanes.forEach((plane) => {
+    seen.add(plane.uid);
+    const pose = frame.getPose(plane.planeSpace, refSpace);
+    if (!pose) return;
+    tmpQ.set(pose.transform.orientation.x, pose.transform.orientation.y, pose.transform.orientation.z, pose.transform.orientation.w);
+    tmpP.set(pose.transform.position.x, pose.transform.position.y, pose.transform.position.z);
+    const pts = [];
+    for (const p of plane.polygon) {
+      pts.push(new THREE.Vector3(p.x, p.y, p.z).applyQuaternion(tmpQ).add(tmpP));
+    }
+    let entry = debugPlanes.get(plane.uid);
+    if (!entry) {
+      const line = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ transparent: true, opacity: 0.85 }));
+      scene.add(line);
+      entry = { line };
+      debugPlanes.set(plane.uid, entry);
+    }
+    const pos = entry.line.geometry.attributes.position;
+    if (!pos || pos.count !== pts.length + 1) {
+      entry.line.geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array((pts.length + 1) * 3), 3));
+    }
+    for (let i = 0; i < pts.length; i++) {
+      entry.line.geometry.attributes.position.setXYZ(i, pts[i].x, pts[i].y, pts[i].z);
+    }
+    entry.line.geometry.attributes.position.setXYZ(pts.length, pts[0].x, pts[0].y, pts[0].z);
+    entry.line.geometry.attributes.position.needsUpdate = true;
+    entry.line.geometry.computeBoundingSphere();
+    entry.line.material.color.setHex(planeColor(plane));
+  });
+  debugPlanes.forEach((entry, uid) => {
+    if (!seen.has(uid)) {
+      scene.remove(entry.line);
+      entry.line.geometry.dispose();
+      entry.line.material.dispose();
+      debugPlanes.delete(uid);
+    }
+  });
+}
+
+function buildDebug() {
+  debugGrid = new THREE.GridHelper(10, 10, 0x29ff90, 0x1b5c46);
+  debugGrid.material.transparent = true;
+  debugGrid.material.opacity = 0.5;
+  scene.add(debugGrid);
+
+  debugRay = new THREE.Line(
+    new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(new Float32Array(6), 3)),
+    new THREE.LineBasicMaterial({ transparent: true, opacity: 0.9 })
+  );
+  debugRay.frustumCulled = false;
+  scene.add(debugRay);
+
+  debugRayEnd = new THREE.Sprite(new THREE.SpriteMaterial({ map: orbTexture(), transparent: true, depthTest: false, depthWrite: false }));
+  debugRayEnd.scale.set(0.12, 0.12, 1);
+  debugRayEnd.frustumCulled = false;
+  scene.add(debugRayEnd);
+
+  debugCam = new THREE.Mesh(new THREE.SphereGeometry(0.03, 8, 8), new THREE.MeshBasicMaterial({ color: 0xffffff }));
+  scene.add(debugCam);
+}
+
 function onSessionStart() {
   scene.clear();
   scene.add(reticle);
+  debugPlanes.forEach((entry) => {
+    entry.line.geometry.dispose();
+    entry.line.material.dispose();
+  });
+  debugPlanes.clear();
+  buildDebug();
   balloons = 0;
   placePending = false;
   hitTestSource = null;
@@ -264,6 +365,10 @@ renderer.setAnimationLoop(() => {
     reticle.visible = false;
   }
 
+  updateDebugRay(surfacePos);
+  updateDebugPlanes(frame, refSpace);
+  debugCam.position.copy(camera.position);
+
   if (placePending) {
     placePending = false;
     if (surfacePos) {
@@ -282,7 +387,7 @@ window.addEventListener('resize', () => {
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
 
-const enterBtn = ARButton.createButton(renderer, { optionalFeatures: ['hit-test', 'dom-overlay'], domOverlay: { root: overlayRoot } });
+const enterBtn = ARButton.createButton(renderer, { optionalFeatures: ['hit-test', 'plane-detection', 'dom-overlay'], domOverlay: { root: overlayRoot } });
 document.getElementById('enter-ar').appendChild(enterBtn);
 
 function neutralButton(ok, label) {
