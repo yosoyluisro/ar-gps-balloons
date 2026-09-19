@@ -2,5 +2,8 @@
   "name": "ar-balloons",
   "version": "0.4.0",
   "private": true,
-  "type": "module"
+  "type": "module",
+  "scripts": {
+    "test": "node test/geo.test.js"
+  }
 }
