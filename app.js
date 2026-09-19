@@ -21,7 +21,7 @@ const countEl = document.getElementById('count');
 let balloons = 0;
 
 let hitTestSource = null;
-let lastHit = null;
+let transientSource = null;
 let anchored = [];
 let placePending = false;
 
@@ -71,11 +71,7 @@ function placeFree() {
 }
 
 function onSelect() {
-  if (hitTestSource && lastHit) {
-    placePending = true;
-  } else {
-    placeFree();
-  }
+  placePending = true;
 }
 
 async function setupHitTest() {
@@ -83,8 +79,10 @@ async function setupHitTest() {
     const session = renderer.xr.getSession();
     const viewer = await session.requestReferenceSpace('viewer');
     hitTestSource = await session.requestHitTestSource({ space: viewer });
+    transientSource = await session.requestHitTestSourceForTransientInput({ profile: 'generic-touchscreen', space: viewer });
   } catch {
     hitTestSource = null;
+    transientSource = null;
   }
 }
 
@@ -97,9 +95,9 @@ function onSessionStart() {
   scene.add(reticle);
   balloons = 0;
   anchored = [];
-  lastHit = null;
   placePending = false;
   hitTestSource = null;
+  transientSource = null;
   countEl.textContent = '';
   startEl.classList.add('hidden');
   setupHitTest();
@@ -119,31 +117,52 @@ renderer.setAnimationLoop(() => {
   const frame = renderer.xr.getFrame();
   const refSpace = renderer.xr.getReferenceSpace();
 
-  if (hitTestSource) {
+  let surfaceHit = null;
+  let surfacePos = null;
+
+  if (transientSource) {
+    const tr = frame.getHitTestResultsForTransientInput(transientSource);
+    if (tr.length && tr[0].results.length) {
+      const pose = tr[0].results[0].getPose(refSpace);
+      if (pose) {
+        surfaceHit = tr[0].results[0];
+        surfacePos = new THREE.Vector3(pose.transform.position.x, pose.transform.position.y, pose.transform.position.z);
+      }
+    }
+  }
+
+  if (!surfaceHit && hitTestSource) {
     const results = frame.getHitTestResults(hitTestSource);
     if (results.length) {
       const pose = results[0].getPose(refSpace);
-      lastHit = new THREE.Vector3(pose.transform.position.x, pose.transform.position.y, pose.transform.position.z);
-      reticle.position.copy(lastHit);
-      reticle.visible = true;
-      if (placePending) {
-        placePending = false;
-        const ball = makeBalloon();
-        ball.position.copy(lastHit).add(FLOAT_VEC);
-        balloons++;
-        if (typeof results[0].createAnchor === 'function') {
-          results[0].createAnchor().then((anchor) => {
-            anchored.push({ anchor, ball });
-          }).catch(() => {});
-        }
+      if (pose) {
+        surfaceHit = results[0];
+        surfacePos = new THREE.Vector3(pose.transform.position.x, pose.transform.position.y, pose.transform.position.z);
+      }
+    }
+  }
+
+  if (surfacePos) {
+    reticle.position.copy(surfacePos);
+    reticle.visible = true;
+  } else {
+    reticle.visible = false;
+  }
+
+  if (placePending) {
+    placePending = false;
+    if (surfaceHit) {
+      const ball = makeBalloon();
+      ball.position.copy(surfacePos).add(FLOAT_VEC);
+      balloons++;
+      if (typeof surfaceHit.createAnchor === 'function') {
+        surfaceHit.createAnchor().then((anchor) => {
+          anchored.push({ anchor, ball });
+        }).catch(() => {});
       }
     } else {
-      reticle.visible = false;
+      placeFree();
     }
-  } else {
-    lastHit = null;
-    reticle.position.copy(aimPoint(PLACE_DIST));
-    reticle.visible = true;
   }
 
   for (const { anchor, ball } of anchored) {
