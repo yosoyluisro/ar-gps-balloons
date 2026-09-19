@@ -26,7 +26,6 @@ const nameOk = document.getElementById('label-ok');
 let balloons = 0;
 let hitTestSource = null;
 let transientSource = null;
-let anchored = [];
 let placePending = false;
 let selectGuardUntil = 0;
 let labelWaiting = null;
@@ -119,15 +118,27 @@ function makeBallGroup() {
   return group;
 }
 
-function placeFree() {
-  const ball = new THREE.Sprite(new THREE.SpriteMaterial({ map: ballTex, transparent: true, depthTest: true, depthWrite: false }));
-  ball.scale.set(0.35, 0.35, 1);
-  ball.position.copy(aimPoint(PLACE_DIST));
-  scene.add(ball);
+function placeLabel(surfacePos) {
+  const group = makeBallGroup();
+  group.position.copy(surfacePos);
   balloons++;
+  const label = makeLabelSprite('Globo ' + balloons);
+  label.position.y = FLOAT_ABOVE - LABEL_GAP;
+  group.add(label);
+  labelWaiting = label;
+  nameOverlay.classList.remove('hidden');
+  nameInput.value = 'Globo ' + balloons;
+  nameInput.focus();
+  nameInput.select();
 }
 
-function promptName(label) {
+function placeFree() {
+  const group = makeBallGroup();
+  group.position.copy(aimPoint(PLACE_DIST));
+  balloons++;
+  const label = makeLabelSprite('Globo ' + balloons);
+  label.position.y = FLOAT_ABOVE - LABEL_GAP;
+  group.add(label);
   labelWaiting = label;
   nameOverlay.classList.remove('hidden');
   nameInput.value = 'Globo ' + balloons;
@@ -156,21 +167,6 @@ nameInput.addEventListener('keydown', (e) => {
   }
 });
 
-function placeAnchored(surfaceHit, surfacePos) {
-  const group = makeBallGroup();
-  group.position.copy(surfacePos);
-  balloons++;
-  const label = makeLabelSprite('Globo ' + balloons);
-  label.position.y = FLOAT_ABOVE - LABEL_GAP;
-  group.add(label);
-  promptName(label);
-  if (typeof surfaceHit.createAnchor === 'function') {
-    surfaceHit.createAnchor().then((anchor) => {
-      anchored.push({ anchor, group });
-    }).catch(() => {});
-  }
-}
-
 function onSelect() {
   if (Date.now() < selectGuardUntil) return;
   if (!nameOverlay.classList.contains('hidden')) return;
@@ -197,7 +193,6 @@ function onSessionStart() {
   scene.clear();
   scene.add(reticle);
   balloons = 0;
-  anchored = [];
   placePending = false;
   hitTestSource = null;
   transientSource = null;
@@ -222,7 +217,6 @@ renderer.setAnimationLoop(() => {
   const frame = renderer.xr.getFrame();
   const refSpace = renderer.xr.getReferenceSpace();
 
-  let surfaceHit = null;
   let surfacePos = null;
 
   if (transientSource) {
@@ -230,18 +224,16 @@ renderer.setAnimationLoop(() => {
     if (tr.length && tr[0].results.length) {
       const pose = tr[0].results[0].getPose(refSpace);
       if (pose) {
-        surfaceHit = tr[0].results[0];
         surfacePos = new THREE.Vector3(pose.transform.position.x, pose.transform.position.y, pose.transform.position.z);
       }
     }
   }
 
-  if (!surfaceHit && hitTestSource) {
+  if (!surfacePos && hitTestSource) {
     const results = frame.getHitTestResults(hitTestSource);
     if (results.length) {
       const pose = results[0].getPose(refSpace);
       if (pose) {
-        surfaceHit = results[0];
         surfacePos = new THREE.Vector3(pose.transform.position.x, pose.transform.position.y, pose.transform.position.z);
       }
     }
@@ -256,17 +248,10 @@ renderer.setAnimationLoop(() => {
 
   if (placePending) {
     placePending = false;
-    if (surfaceHit) {
-      placeAnchored(surfaceHit, surfacePos);
+    if (surfacePos) {
+      placeLabel(surfacePos);
     } else {
       placeFree();
-    }
-  }
-
-  for (const { anchor, group } of anchored) {
-    const pose = frame.getPose(anchor.anchorSpace, refSpace);
-    if (pose) {
-      group.position.set(pose.transform.position.x, pose.transform.position.y, pose.transform.position.z);
     }
   }
 
@@ -279,7 +264,7 @@ window.addEventListener('resize', () => {
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
 
-const enterBtn = ARButton.createButton(renderer, { optionalFeatures: ['hit-test', 'anchors'] });
+const enterBtn = ARButton.createButton(renderer, { optionalFeatures: ['hit-test'] });
 document.getElementById('enter-ar').appendChild(enterBtn);
 
 function neutralButton(ok, label) {
