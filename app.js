@@ -7,7 +7,18 @@ const ALT_OFFSET = 1.6;        // altura de los globos sobre el nivel de origen 
 const DEFAULT_COLOR = '#29fff0';
 const IGNORED = 'button,input,select,textarea,.modal,.toast,.panel,.hud-top,.status-bar,.dbg';
 
+const APP_VERSION = '0.4.1';
+
 const $ = (id) => document.getElementById(id);
+
+function renderVersion() {
+  const el = $('version');
+  const hud = $('version-hud');
+  const v = 'v' + APP_VERSION;
+  if (el) el.textContent = v;
+  if (hud) hud.textContent = v;
+}
+renderVersion();
 
 const renderer = new THREE.WebGLRenderer({ canvas: $('scene'), antialias: true, alpha: true });
 renderer.setSize(window.innerWidth, window.innerHeight);

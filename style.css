@@ -245,3 +245,18 @@ button { font-family: inherit; }
 .btn i, .mode-btn i, .hud-top h1 i { margin-right: 5px; }
 .logo { color: var(--accent); }
 #enter-ar button i, #enter-ar a i { margin-right: 6px; }
+
+/* ---- version visible ---- */
+.version-badge {
+  margin-top: 10px;
+  color: var(--dim);
+  font-size: 11px;
+  letter-spacing: 0.5px;
+  font-variant-numeric: tabular-nums;
+}
+.version-hud {
+  color: var(--dim);
+  font-size: 11px;
+  margin-left: 6px;
+  font-variant-numeric: tabular-nums;
+}
