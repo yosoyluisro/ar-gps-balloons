@@ -22,6 +22,7 @@ const countEl = document.getElementById('count');
 const nameOverlay = document.getElementById('overlay-label');
 const nameInput = document.getElementById('label-input');
 const nameOk = document.getElementById('label-ok');
+const overlayRoot = document.getElementById('overlay');
 
 let balloons = 0;
 let hitTestSource = null;
@@ -148,6 +149,8 @@ function placeFree() {
 
 function hideNamePrompt() {
   nameOverlay.classList.add('hidden');
+  nameInput.blur();
+  nameInput.value = '';
   selectGuardUntil = Date.now() + 700;
 }
 
@@ -264,7 +267,7 @@ window.addEventListener('resize', () => {
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
 
-const enterBtn = ARButton.createButton(renderer, { optionalFeatures: ['hit-test'] });
+const enterBtn = ARButton.createButton(renderer, { optionalFeatures: ['hit-test', 'dom-overlay'], domOverlay: { root: overlayRoot } });
 document.getElementById('enter-ar').appendChild(enterBtn);
 
 function neutralButton(ok, label) {
