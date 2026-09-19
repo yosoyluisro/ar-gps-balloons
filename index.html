@@ -1,15 +1,15 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="es">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-  <meta name="description" content="Deja globos informativos flotando en realidad aumentada, anclados a tu posición GPS real.">
+  <meta name="description" content="Deja globos informativos flotando en realidad aumentada, anclados a tu posiciÃ³n GPS real.">
   <meta name="theme-color" content="#05060f">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <title>AR GPS Balloons</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%8E%88%3C/text%3E%3C/svg%3E">
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="style.css?v=2">
   <script type="importmap">
     {
       "imports": {
@@ -27,31 +27,52 @@
 
     <div id="hud" class="hidden">
       <header class="hud-top">
-        <h1>🎈 AR GPS Balloons</h1>
+        <h1>ðŸŽˆ AR GPS Balloons</h1>
         <span class="gsub">globos anclados a GPS real</span>
       </header>
 
       <section class="panel">
         <div class="row">
-          <button id="btn-mode" class="btn" title="Cambiar modo">🗂 Registrar</button>
-          <button id="btn-place" class="btn btn-accent">📍 Dejar globo aquí</button>
-          <button id="btn-nudgel" class="btn" title="Rotar mundo -1°">⟲ −1°</button>
-          <button id="btn-nudger" class="btn" title="Rotar mundo +1°">+1° ⟳</button>
-          <button id="btn-export" class="btn" title="Exportar respaldo JSON">⤓</button>
-          <button id="btn-import" class="btn" title="Importar respaldo JSON">⤒</button>
+          <button id="btn-mode" class="btn" title="Cambiar modo">ðŸ—‚ Registrar</button>
+          <button id="btn-place" class="btn btn-accent">ðŸ“ Dejar globo aquÃ­</button>
+          <button id="btn-nudgel" class="btn" title="Rotar mundo -1Â°">âŸ² âˆ’1Â°</button>
+          <button id="btn-nudger" class="btn" title="Rotar mundo +1Â°">+1Â° âŸ³</button>
+          <button id="btn-export" class="btn" title="Exportar respaldo JSON">â¤“</button>
+          <button id="btn-import" class="btn" title="Importar respaldo JSON">â¤’</button>
         </div>
-        <div id="status-line" class="status-bar">Sin sesión</div>
+        <div id="status-line" class="status-bar">Sin sesiÃ³n</div>
         <div id="dbg" class="dbg hidden"></div>
       </section>
     </div>
 
     <div id="modal" class="modal hidden">
       <div class="card left">
-        <h3>Dejar globo aquí</h3>
+        <h3>Dejar globo aquÃ­</h3>
         <input id="input-name" type="text" maxlength="30" placeholder="Nombre (ej. Biblioteca)" autocomplete="off" enterkeyhint="done">
         <div class="row">
           <button id="btn-modal-ok" class="btn btn-accent">Dejar globo</button>
           <button id="btn-modal-cancel" class="btn">Cancelar</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="edit-modal" class="modal hidden">
+      <div class="card left">
+        <h3 id="edit-title">Editar globo</h3>
+        <p id="edit-info" class="status"></p>
+        <div class="row edit-actions">
+          <button id="btn-edit-rename" class="btn" title="Cambiar el nombre">âœï¸ Nombre</button>
+          <button id="btn-edit-move" class="btn" title="Mover el globo hacia el punto apuntado">ðŸŽ¯ Mover</button>
+        </div>
+        <div class="row edit-actions">
+          <button id="btn-edit-nudge-n" class="btn" title="Afinar: mover 1 cm al norte">â¤´ +1cm N</button>
+          <button id="btn-edit-nudge-s" class="btn" title="Afinar: mover 1 cm al sur">â¤µ âˆ’1cm S</button>
+          <button id="btn-edit-nudge-e" class="btn" title="Afinar: mover 1 cm al este">â†’ +1cm E</button>
+          <button id="btn-edit-nudge-w" class="btn" title="Afinar: mover 1 cm al oeste">â† âˆ’1cm W</button>
+        </div>
+        <div class="row">
+          <button id="btn-edit-delete" class="btn btn-danger">ðŸ—‘ Borrar</button>
+          <button id="btn-edit-close" class="btn">Cerrar</button>
         </div>
       </div>
     </div>
@@ -61,17 +82,17 @@
 
   <div id="overlay-start">
     <div class="card">
-      <div class="logo">🎈</div>
+      <div class="logo">ðŸŽˆ</div>
       <h2>AR GPS Balloons</h2>
-      <p>Deja globos informativos flotando en realidad aumentada, anclados a tu posición GPS real. Al volver, aparecen donde los dejaste.</p>
+      <p>Deja globos informativos flotando en realidad aumentada, anclados a tu posiciÃ³n GPS real. Al volver, aparecen donde los dejaste.</p>
       <ul class="hint">
-        <li>1 · Pulsa donde ves el globo en tu pantalla</li>
-        <li>2 · El globo queda en tu GPS actual</li>
-        <li>3 · Camina y vuelve: el globo te espera</li>
+        <li>1 Â· Pulsa donde ves el globo en tu pantalla</li>
+        <li>2 Â· El globo queda en tu GPS actual</li>
+        <li>3 Â· Camina y vuelve: el globo te espera</li>
       </ul>
       <div id="mode-select" class="mode-select">
-        <button id="mode-reg" type="button" class="mode-btn active">📍 Registrar</button>
-        <button id="mode-view" type="button" class="mode-btn">👁 Solo visualizar</button>
+        <button id="mode-reg" type="button" class="mode-btn active">ðŸ“ Registrar</button>
+        <button id="mode-view" type="button" class="mode-btn">ðŸ‘ Solo visualizar</button>
       </div>
       <p class="mode-help">Registrar deja globos; Solo visualizar solo los muestra.</p>
       <div id="enter-ar"></div>
@@ -81,6 +102,6 @@
 
   <input id="import-file" type="file" accept="application/json,.json" class="hidden">
 
-  <script type="module" src="app.js"></script>
+  <script type="module" src="app.js?v=2"></script>
 </body>
 </html>

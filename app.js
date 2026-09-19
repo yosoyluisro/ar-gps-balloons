@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { ARButton } from 'three/addons/webxr/ARButton.js';
-import { deltaMeters, degToRad, radToDeg } from './geo.js';
+import { deltaMeters, metersToDelta, degToRad, radToDeg } from './geo.js';
 
 const LS = 'argps.v1';
 const ALT_OFFSET = 1.6;        // altura de los globos sobre el nivel de origen (m)
@@ -163,6 +163,8 @@ function addBalloonSprite(b) {
   spr.scale.set(0.7, 0.56, 1);
   glow.position.copy(spr.position);
   glow.scale.set(0.5, 0.5, 1);
+  spr.userData.id = b.id;
+  glow.userData.id = b.id;
   pivot.add(spr, glow);
 }
 
@@ -291,15 +293,122 @@ function onOrientation(e) {
 
 /* ---------------- colocar globo ---------------- */
 
-// Toque directo sobre la cámara (gesto XR "select"): el golpe pasa por el área
-// transparente del overlay y cae al mundo, abriendo el colocador.
+const raycaster = new THREE.Raycaster();
+const editBalloonSprites = new Map(); // id → { spr, glow } (solo los visibles en el frame)
+
+function collectSprites() {
+  editBalloonSprites.clear();
+  for (const child of pivot.children) {
+    if (child.isSprite && child.userData && child.userData.id) {
+      editBalloonSprites.set(child.userData.id, child);
+    }
+  }
+}
+
+function findHitBalloon() {
+  raycaster.setFromCamera({ x: 0, y: 0 }, camera);
+  const sprites = Array.from(editBalloonSprites.values());
+  const hits = raycaster.intersectObjects(sprites, false);
+  if (!hits.length) return null;
+  const hit = hits[0];
+  return hit.object.userData.id || null;
+}
+
+// Toque directo sobre la cámara (gesto XR "select"): si toca un globo, abre su edición;
+// si no, en modo Registrar abre el colocador.
 function onXRSelect() {
   if (!arOn || !origin) return;
   const now = Date.now();
   if (now - lastSelectAt < 500) return;
   lastSelectAt = now;
-  openPlacer();
+  if (pendingMoveId) {
+    currentPosition().then((p) => {
+      const b = balloons.find((x) => x.id === pendingMoveId);
+      if (!b) return;
+      b.lat = p.coords.latitude;
+      b.lng = p.coords.longitude;
+      pendingMoveId = null;
+      save();
+      renderWorld();
+      showStatus();
+      toast('Globo movido a tu GPS actual 🎯');
+    }).catch(() => toast('No se pudo leer la posición 📡'));
+    return;
+  }
+  const bid = findHitBalloon();
+  if (bid) {
+    openEdit(bid);
+  } else {
+    openPlacer();
+  }
 }
+
+let editingId = null;
+
+function openEdit(id) {
+  const b = balloons.find((x) => x.id === id);
+  if (!b) return;
+  editingId = id;
+  $('edit-title').textContent = '🎈 ' + (b.name || 'Globo');
+  $('edit-info').textContent = 'Lat ' + b.lat.toFixed(6) + ' · Lng ' + b.lng.toFixed(6) + (b.createdAt ? ' · ' + new Date(b.createdAt).toLocaleString() : '');
+  $('edit-modal').classList.remove('hidden');
+}
+
+function closeEdit() {
+  $('edit-modal').classList.add('hidden');
+  editingId = null;
+}
+
+function currentEditBalloon() {
+  return balloons.find((x) => x.id === editingId) || null;
+}
+
+function nudgeBalloon(eastM, northM) {
+  const b = currentEditBalloon();
+  if (!b) return;
+  const p = metersToDelta(b.lat, b.lng, eastM, northM);
+  b.lat = p.lat;
+  b.lng = p.lng;
+  save();
+  renderWorld();
+  showStatus();
+  openEdit(b.id);
+  toast('Globo movido 🎯');
+}
+
+function deleteEditingBalloon() {
+  const b = currentEditBalloon();
+  if (!b) return;
+  balloons = balloons.filter((x) => x.id !== b.id);
+  save();
+  renderWorld();
+  showStatus();
+  closeEdit();
+  toast('Globo borrado 🗑');
+}
+
+function renameEditingBalloon() {
+  const b = currentEditBalloon();
+  if (!b) return;
+  const name = prompt('Nuevo nombre para el globo:', b.name || '');
+  if (name === null || name.trim() === '') return;
+  b.name = name.trim().slice(0, 30);
+  save();
+  renderWorld();
+  showStatus();
+  openEdit(b.id);
+  toast('Globo renombrado ✏️');
+}
+
+function moveEditingBalloon() {
+  const b = currentEditBalloon();
+  if (!b) return;
+  closeEdit();
+  toast('Apunta al lugar y toca para mover 🎯');
+  pendingMoveId = b.id;
+}
+
+let pendingMoveId = null;
 
 function openPlacer() {
   if (!arOn) return toast('Entra a Realidad Aumentada');
@@ -400,6 +509,16 @@ $('import-file').addEventListener('change', (e) => {
   if (f) importScene(f);
 });
 
+// ---- edición de globos ----
+$('btn-edit-rename').addEventListener('click', renameEditingBalloon);
+$('btn-edit-move').addEventListener('click', moveEditingBalloon);
+$('btn-edit-delete').addEventListener('click', deleteEditingBalloon);
+$('btn-edit-close').addEventListener('click', closeEdit);
+$('btn-edit-nudge-n').addEventListener('click', () => nudgeBalloon(0, 0.01));
+$('btn-edit-nudge-s').addEventListener('click', () => nudgeBalloon(0, -0.01));
+$('btn-edit-nudge-e').addEventListener('click', () => nudgeBalloon(0.01, 0));
+$('btn-edit-nudge-w').addEventListener('click', () => nudgeBalloon(-0.01, 0));
+
 $('btn-nudgel').addEventListener('click', () => {
   headingNudgeDeg -= 1;
   updatePivot();
@@ -438,6 +557,7 @@ function refreshDbg() {
 
 renderer.setAnimationLoop(() => {
   refreshDbg();
+  collectSprites();
   renderer.render(scene, camera);
 });
 

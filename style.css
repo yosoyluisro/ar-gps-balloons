@@ -233,3 +233,10 @@ button { font-family: inherit; }
 .mode-help {
   color: var(--dim); font-size: 12px; margin: 4px 0 12px;
 }
+
+/* ---- edición de globos ---- */
+.edit-actions { margin-bottom: 8px; gap: 6px; flex-wrap: wrap; }
+.edit-actions .btn { flex: 1; min-width: 72px; font-size: 13px; padding: 9px 6px; }
+.btn-danger { background: rgba(255,87,87,0.16); color: var(--danger); border-color: rgba(255,87,87,0.35); }
+.btn-danger:hover { background: rgba(255,87,87,0.28); }
+#edit-modal .status { text-align: left; font-size: 12px; word-break: break-all; }

@@ -33,6 +33,16 @@ export function deltaMeters(lat0, lng0, lat1, lng1) {
   return { east: h * dl, north: R * (f1 - f0) };
 }
 
+// Inversa de deltaMeters: desde (lat0,lng0) y un desplazamiento {east,north} en metros,
+// devuelve { lat, lng } del punto destino. Exacta en <10 km.
+export function metersToDelta(lat0, lng0, east, north) {
+  const f0 = degToRad(lat0);
+  const h = R * Math.cos(f0);
+  const dLng = east / h;
+  const dLat = north / R;
+  return { lat: lat0 + radToDeg(dLat), lng: lng0 + radToDeg(dLng) };
+}
+
 // Rumbo inicial de un punto a otro, en grados (0 = norte, 90 = este, 0..360).
 export function bearingDeg(lat0, lng0, lat1, lng1) {
   const f1 = degToRad(lat0);
