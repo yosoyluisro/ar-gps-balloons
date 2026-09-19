@@ -1,387 +1,405 @@
 import * as THREE from 'three';
 import { ARButton } from 'three/addons/webxr/ARButton.js';
+import { deltaMeters, degToRad, radToDeg } from './geo.js';
 
-const ORB = 'rgba(41,255,240,1)';
-const PLACE_DIST = 2.2;
-const FLOAT_ABOVE = 0.2;
-const LABEL_GAP = 0.32;
-const LABEL_H = 0.11;
+const LS = 'argps.v1';
+const ALT_OFFSET = 1.6;        // altura de los globos sobre el nivel de origen (m)
+const DEFAULT_ICON = '🎈';
+const DEFAULT_COLOR = '#29fff0';
+const IGNORED = 'button,input,select,textarea,.modal,.toast,.panel,.hud-top,.status-bar,.dbg';
 
-const renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('scene'), antialias: true, alpha: true });
+const $ = (id) => document.getElementById(id);
+
+const renderer = new THREE.WebGLRenderer({ canvas: $('scene'), antialias: true, alpha: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setClearAlpha(0);
 renderer.xr.enabled = true;
-renderer.xr.setReferenceSpaceType('local');
 
 const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 100);
+const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 1000);
+const pivot = new THREE.Group();
+scene.add(pivot);
 
-const startEl = document.getElementById('overlay-start');
-const countEl = document.getElementById('count');
-const nameOverlay = document.getElementById('overlay-label');
-const nameInput = document.getElementById('label-input');
-const nameOk = document.getElementById('label-ok');
-const overlayRoot = document.getElementById('overlay');
-const qrEl = document.getElementById('qr');
-const versionEl = document.getElementById('version');
-const APP_VERSION = '0.4.0';
+let store = loadStore();
+let balloons = store.balloons;
 
-function pagesUrl() {
-  const h = location.hostname;
-  return h.endsWith('github.io') ? location.origin + location.pathname : 'https://yosoyluisro.github.io/ar-gps-balloons/';
+let origin = null;            // { lat, lng, alt, accuracy }
+let orientation = null;       // último evento deviceorientation
+let headingNudgeDeg = store.prefs.headingNudgeDeg || 0;
+let pendingPos = null;        // posición capturada al pulsar "Dejar globo aquí"
+let arOn = false;
+let enterARButton = null;
+let arSession = null;         // sesión XR activa (para eventos select)
+let lastSelectAt = 0;
+
+/* ---------------- almacenamiento ---------------- */
+
+function loadStore() {
+  try {
+    const v = JSON.parse(localStorage.getItem(LS));
+    if (v && Array.isArray(v.balloons)) {
+      const ok = v.balloons.filter((b) => b && Number.isFinite(b.lat) && Number.isFinite(b.lng));
+      if (ok.length < v.balloons.length) queueMicrotask(() => toast('Se omitieron ' + (v.balloons.length - ok.length) + ' globo(s) sin coordenadas'));
+      return { balloons: ok, prefs: v.prefs || {} };
+    }
+  } catch { /* */ }
+  return { balloons: [], prefs: {} };
 }
 
-function renderQr() {
-  if (!qrEl || typeof qrcode !== 'function') return;
-  const qr = qrcode(0, 'M');
-  qr.addData(pagesUrl());
-  qr.make();
-  qrEl.innerHTML = qr.createImgTag(5, 2);
+function save() {
+  try {
+    localStorage.setItem(LS, JSON.stringify({ version: 1, balloons, prefs: { ...store.prefs, headingNudgeDeg } }));
+  } catch {
+    toast('No se pudo guardar (almacenamiento lleno)');
+  }
 }
-renderQr();
-if (versionEl) versionEl.textContent = 'v' + APP_VERSION;
 
-let balloons = 0;
-let hitTestSource = null;
-let transientSource = null;
-let placePending = false;
-let selectGuardUntil = 0;
-let labelWaiting = null;
+/* ---------------- GPS y brújula ---------------- */
 
-function orbTexture() {
+function requestPosition() {
+  return new Promise((resolve, reject) => {
+    if (!navigator.geolocation) return reject(new Error('geolocalización no soportada'));
+    const t = setTimeout(() => reject(new Error('timeout')), 15000);
+    navigator.geolocation.getCurrentPosition(
+      (p) => { clearTimeout(t); resolve(p); },
+      (e) => { clearTimeout(t); reject(e); },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+    );
+  });
+}
+
+// KISS: si el GPS falla, caemos al origen ya fijado (o al local 0,0,0) para que
+// colocar globos y dibujarlos funcione siempre, sin depender de la señal.
+function currentPosition() {
+  return requestPosition().catch(() => {
+    if (origin) return { coords: origin };
+    return Promise.reject(new Error('no gps'));
+  });
+}
+
+function setOrigin(p) {
+  origin = {
+    lat: p.coords.latitude,
+    lng: p.coords.longitude,
+    alt: p.coords.altitude || 0,
+    accuracy: p.coords.accuracy || null
+  };
+}
+
+// Azimut horizontal de la parte trasera del celular (donde apunta la cámara), 0..360 (0 = norte).
+// alpha/beta/gamma vienen de DeviceOrientation; se convierte el eje -Z del dispositivo a la
+// terna de referencia de la especificación (X=este, Y=norte, Z=arriba) y se proyecta en plano XY.
+function deviceHeadingDeg() {
+  if (!orientation) return 0;
+  const o = orientation;
+  const alpha = o.alpha || 0;
+  const beta = o.beta || 0;
+  const gamma = o.gamma || 0;
+  const e = new THREE.Euler(degToRad(alpha), degToRad(beta), degToRad(gamma), 'ZXY');
+  const q = new THREE.Quaternion().setFromEuler(e).invert();
+  const back = new THREE.Vector3(0, 0, -1).applyQuaternion(q);
+  return (radToDeg(Math.atan2(back.x, back.y)) + 360) % 360;
+}
+
+function updatePivot() {
+  // El globo "al norte" se coloca en -Z; rotar el mundo con el azimut inicial del celular
+  // deja el norte geográfico alineado con el norte del espacio de la sesión.
+  pivot.rotation.y = degToRad(deviceHeadingDeg() + headingNudgeDeg);
+}
+
+/* ---------------- textura / sprites de globo ---------------- */
+
+function balloonTexture(name, color) {
   const c = document.createElement('canvas');
-  c.width = c.height = 128;
+  c.width = 320;
+  c.height = 256;
   const g = c.getContext('2d');
-  const grad = g.createRadialGradient(48, 44, 6, 64, 64, 62);
-  grad.addColorStop(0, 'rgba(255,255,255,1)');
-  grad.addColorStop(0.35, ORB);
+  g.clearRect(0, 0, c.width, c.height);
+  g.fillStyle = 'rgba(8,10,24,0.92)';
+  g.strokeStyle = color || DEFAULT_COLOR;
+  g.lineWidth = 7;
+  g.beginPath();
+  g.roundRect(16, 8, 288, 168, 24);
+  g.fill();
+  g.stroke();
+  g.font = 'bold 70px system-ui, sans-serif';
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.fillText(DEFAULT_ICON, 160, 86);
+  g.font = '600 30px system-ui, sans-serif';
+  g.fillStyle = '#ffffff';
+  g.fillText((name || '').slice(0, 18), 160, 216);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+  return tex;
+}
+
+function glowTexture() {
+  const c = document.createElement('canvas');
+  c.width = 64;
+  c.height = 64;
+  const g = c.getContext('2d');
+  const grad = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+  grad.addColorStop(0, 'rgba(41,255,240,0.8)');
   grad.addColorStop(1, 'rgba(41,255,240,0)');
   g.fillStyle = grad;
-  g.fillRect(0, 0, 128, 128);
-  return new THREE.CanvasTexture(c);
+  g.fillRect(0, 0, 64, 64);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
 }
 
-function ringTexture() {
-  const c = document.createElement('canvas');
-  c.width = c.height = 128;
-  const g = c.getContext('2d');
-  g.strokeStyle = ORB;
-  g.lineWidth = 6;
-  g.beginPath();
-  g.arc(64, 64, 52, 0, Math.PI * 2);
-  g.stroke();
-  return new THREE.CanvasTexture(c);
-}
+const glowTex = glowTexture();
 
-const ballTex = orbTexture();
-
-function aimPoint(dist) {
-  const dir = new THREE.Vector3();
-  camera.getWorldDirection(dir);
-  return camera.position.clone().add(dir.multiplyScalar(dist));
-}
-
-function textSpriteTexture(text) {
-  const c = document.createElement('canvas');
-  const g = c.getContext('2d');
-  const fs = 64;
-  g.font = '700 ' + fs + 'px system-ui, sans-serif';
-  const padX = 40;
-  const padY = 22;
-  const w = Math.ceil(g.measureText(text).width + padX * 2);
-  const h = Math.ceil(fs + padY * 2);
-  c.width = w;
-  c.height = h;
-  const g2 = c.getContext('2d');
-  g2.font = '700 ' + fs + 'px system-ui, sans-serif';
-  g2.fillStyle = 'rgba(5, 6, 15, 0.82)';
-  const r = h / 2;
-  g2.beginPath();
-  g2.moveTo(r, 0);
-  g2.arcTo(w, 0, w, h, r);
-  g2.arcTo(w, h, 0, h, r);
-  g2.arcTo(0, h, 0, 0, r);
-  g2.arcTo(0, 0, w, 0, r);
-  g2.closePath();
-  g2.fill();
-  g2.fillStyle = '#e8ecff';
-  g2.textAlign = 'center';
-  g2.textBaseline = 'middle';
-  g2.fillText(text, w / 2, h / 2 + 4);
-  return new THREE.CanvasTexture(c);
-}
-
-function makeLabelSprite(text) {
-  const tex = textSpriteTexture(text);
+function addBalloonSprite(b) {
+  const tex = balloonTexture(b.name, b.color);
   const spr = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: true, depthWrite: false }));
-  spr.scale.y = LABEL_H;
-  spr.scale.x = LABEL_H * (tex.image.width / tex.image.height);
-  return spr;
+  const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, transparent: true, depthWrite: false }));
+  const pos = worldPos(b);
+  spr.position.set(pos.x, pos.y, pos.z);
+  spr.scale.set(0.7, 0.56, 1);
+  glow.position.copy(spr.position);
+  glow.scale.set(0.5, 0.5, 1);
+  pivot.add(spr, glow);
 }
 
-function applyLabel(spr, text) {
-  const tex = textSpriteTexture(text);
-  spr.material.map = tex;
-  spr.material.needsUpdate = true;
-  spr.scale.x = LABEL_H * (tex.image.width / tex.image.height);
+function worldPos(b) {
+  const d = deltaMeters(origin.lat, origin.lng, b.lat, b.lng);
+  return { x: d.east, y: b.altOffset ?? ALT_OFFSET, z: -d.north };
 }
 
-function makeBallGroup() {
-  const group = new THREE.Group();
-  const ball = new THREE.Sprite(new THREE.SpriteMaterial({ map: ballTex, transparent: true, depthTest: true, depthWrite: false }));
-  ball.scale.set(0.35, 0.35, 1);
-  ball.position.y = FLOAT_ABOVE;
-  group.add(ball);
-  scene.add(group);
-  return group;
+function renderWorld() {
+  pivot.clear();
+  if (!origin) return;
+  for (const b of balloons) addBalloonSprite(b);
 }
 
-function placeLabel(surfacePos) {
-  const group = makeBallGroup();
-  group.position.copy(surfacePos);
-  balloons++;
-  const label = makeLabelSprite('Globo ' + balloons);
-  label.position.y = FLOAT_ABOVE - LABEL_GAP;
-  group.add(label);
-  labelWaiting = label;
-  nameOverlay.classList.remove('hidden');
-  nameInput.value = 'Globo ' + balloons;
-  nameInput.focus();
-  nameInput.select();
-}
+/* ---------------- UI / sesión ---------------- */
 
-function placeFree() {
-  const group = makeBallGroup();
-  group.position.copy(aimPoint(PLACE_DIST));
-  balloons++;
-  const label = makeLabelSprite('Globo ' + balloons);
-  label.position.y = FLOAT_ABOVE - LABEL_GAP;
-  group.add(label);
-  labelWaiting = label;
-  nameOverlay.classList.remove('hidden');
-  nameInput.value = 'Globo ' + balloons;
-  nameInput.focus();
-  nameInput.select();
-}
-
-function hideNamePrompt() {
-  nameOverlay.classList.add('hidden');
-  nameInput.blur();
-  nameInput.value = '';
-  selectGuardUntil = Date.now() + 700;
-}
-
-nameOk.addEventListener('click', () => {
-  if (labelWaiting) {
-    const name = nameInput.value.trim() || 'Globo ' + balloons;
-    applyLabel(labelWaiting, name);
-    labelWaiting = null;
-  }
-  hideNamePrompt();
-});
-
-nameInput.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') {
-    e.preventDefault();
-    nameOk.click();
-  }
-});
-
-function onSelect() {
-  if (Date.now() < selectGuardUntil) return;
-  if (!nameOverlay.classList.contains('hidden')) return;
-  placePending = true;
-}
-
-async function setupHitTest() {
-  try {
-    const session = renderer.xr.getSession();
-    const viewer = await session.requestReferenceSpace('viewer');
-    hitTestSource = await session.requestHitTestSource({ space: viewer });
-    transientSource = await session.requestHitTestSourceForTransientInput({ profile: 'generic-touchscreen', space: viewer });
-  } catch {
-    hitTestSource = null;
-    transientSource = null;
-  }
-}
-
-const reticle = new THREE.Sprite(new THREE.SpriteMaterial({ map: ringTexture(), transparent: true, depthTest: false, depthWrite: false }));
-reticle.scale.set(0.28, 0.28, 1);
-reticle.visible = false;
-
-const debugPlanes = new Map();
-let debugGrid = null;
-let debugRay = null;
-let debugCam = null;
-let debugRayEnd = null;
-
-function planeColor(plane) {
-  if (plane.orientation === 'horizontal') return 0x29ff90;
-  if (plane.orientation === 'vertical') return 0xff2ef0;
-  return 0x8f9bbf;
-}
-
-function updateDebugRay(surfacePos) {
-  const from = camera.position;
-  const to = surfacePos || aimPoint(PLACE_DIST);
-  const pos = debugRay.geometry.attributes.position;
-  pos.setXYZ(0, from.x, from.y, from.z);
-  pos.setXYZ(1, to.x, to.y, to.z);
-  pos.needsUpdate = true;
-  debugRay.material.color.setHex(surfacePos ? 0x29ff90 : 0xff3b3b);
-  debugRayEnd.position.copy(to);
-}
-
-function updateDebugPlanes(frame, refSpace) {
-  if (!frame.detectedPlanes) {
-    debugPlanes.forEach((entry, uid) => {
-      scene.remove(entry.line);
-      debugPlanes.delete(uid);
-    });
+function showStatus() {
+  const sb = $('status-line');
+  if (!origin) {
+    sb.textContent = 'Globos: ' + balloons.length + ' · sin GPS';
+    $('dbg').classList.add('hidden');
     return;
   }
-  const seen = new Set();
-  const tmpP = new THREE.Vector3();
-  const tmpQ = new THREE.Quaternion();
-  frame.detectedPlanes.forEach((plane) => {
-    seen.add(plane.uid);
-    const pose = frame.getPose(plane.planeSpace, refSpace);
-    if (!pose) return;
-    tmpQ.set(pose.transform.orientation.x, pose.transform.orientation.y, pose.transform.orientation.z, pose.transform.orientation.w);
-    tmpP.set(pose.transform.position.x, pose.transform.position.y, pose.transform.position.z);
-    const pts = [];
-    for (const p of plane.polygon) {
-      pts.push(new THREE.Vector3(p.x, p.y, p.z).applyQuaternion(tmpQ).add(tmpP));
-    }
-    let entry = debugPlanes.get(plane.uid);
-    if (!entry) {
-      const line = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ transparent: true, opacity: 0.85 }));
-      scene.add(line);
-      entry = { line };
-      debugPlanes.set(plane.uid, entry);
-    }
-    const pos = entry.line.geometry.attributes.position;
-    if (!pos || pos.count !== pts.length + 1) {
-      entry.line.geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array((pts.length + 1) * 3), 3));
-    }
-    for (let i = 0; i < pts.length; i++) {
-      entry.line.geometry.attributes.position.setXYZ(i, pts[i].x, pts[i].y, pts[i].z);
-    }
-    entry.line.geometry.attributes.position.setXYZ(pts.length, pts[0].x, pts[0].y, pts[0].z);
-    entry.line.geometry.attributes.position.needsUpdate = true;
-    entry.line.geometry.computeBoundingSphere();
-    entry.line.material.color.setHex(planeColor(plane));
-  });
-  debugPlanes.forEach((entry, uid) => {
-    if (!seen.has(uid)) {
-      scene.remove(entry.line);
-      entry.line.geometry.dispose();
-      entry.line.material.dispose();
-      debugPlanes.delete(uid);
-    }
-  });
-}
-
-function buildDebug() {
-  debugGrid = new THREE.GridHelper(10, 10, 0x29ff90, 0x1b5c46);
-  debugGrid.material.transparent = true;
-  debugGrid.material.opacity = 0.5;
-  scene.add(debugGrid);
-
-  debugRay = new THREE.Line(
-    new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(new Float32Array(6), 3)),
-    new THREE.LineBasicMaterial({ transparent: true, opacity: 0.9 })
-  );
-  debugRay.frustumCulled = false;
-  scene.add(debugRay);
-
-  debugRayEnd = new THREE.Sprite(new THREE.SpriteMaterial({ map: orbTexture(), transparent: true, depthTest: false, depthWrite: false }));
-  debugRayEnd.scale.set(0.12, 0.12, 1);
-  debugRayEnd.frustumCulled = false;
-  scene.add(debugRayEnd);
-
-  debugCam = new THREE.Mesh(new THREE.SphereGeometry(0.03, 8, 8), new THREE.MeshBasicMaterial({ color: 0xffffff }));
-  scene.add(debugCam);
+  $('dbg').classList.remove('hidden');
+  sb.textContent = 'Globos: ' + balloons.length + ' · precisión: ' + (origin.accuracy ? origin.accuracy.toFixed(0) + ' m' : 'n/d');
+  if (origin.accuracy && origin.accuracy > 20) toast('⚠ Precisión baja (' + origin.accuracy.toFixed(0) + ' m)');
 }
 
 function onSessionStart() {
-  scene.clear();
-  scene.add(reticle);
-  debugPlanes.forEach((entry) => {
-    entry.line.geometry.dispose();
-    entry.line.material.dispose();
-  });
-  debugPlanes.clear();
-  buildDebug();
-  balloons = 0;
-  placePending = false;
-  hitTestSource = null;
-  transientSource = null;
-  labelWaiting = null;
-  hideNamePrompt();
-  countEl.textContent = '';
-  startEl.classList.add('hidden');
-  setupHitTest();
-  renderer.xr.getSession().addEventListener('select', onSelect);
+  arOn = true;
+  $('overlay-start').classList.add('hidden');
+  $('hud').classList.remove('hidden');
+  $('aim-dot').classList.remove('hidden');
+  arSession = renderer.xr.getSession();
+  if (arSession) arSession.addEventListener('select', onXRSelect);
+  (async () => {
+    const p = await currentPosition().catch(() => null);
+    if (p) setOrigin(p);
+    else origin = { lat: 0, lng: 0, alt: 0, accuracy: null };
+    updatePivot();
+    renderWorld();
+    showStatus();
+    toast(p ? 'Origin GPS fijado · deja tu primer globo 🎈' : 'Sin GPS: los globos se fijan cerca de ti 🎈');
+  })();
 }
 
 function onSessionEnd() {
-  startEl.classList.remove('hidden');
-  countEl.textContent = balloons ? 'Dejaste ' + balloons + ' etiqueta(s) en el aire' : 'Toca la pantalla en RA para dejar etiquetas';
+  arOn = false;
+  if (arSession) {
+    arSession.removeEventListener('select', onXRSelect);
+    arSession = null;
+  }
+  $('overlay-start').classList.remove('hidden');
+  $('hud').classList.add('hidden');
+  $('aim-dot').classList.add('hidden');
 }
 
-renderer.xr.addEventListener('sessionstart', onSessionStart);
-renderer.xr.addEventListener('sessionend', onSessionEnd);
+function initAR() {
+  enterARButton = ARButton.createButton(renderer, {
+    requiredFeatures: ['local-floor'],
+    optionalFeatures: ['dom-overlay'],
+    domOverlay: { root: $('xr-overlay') }
+  });
 
-renderer.setAnimationLoop(() => {
-  if (!renderer.xr.isPresenting) return;
-  const frame = renderer.xr.getFrame();
-  const refSpace = renderer.xr.getReferenceSpace();
+  // ARButton inyecta estilos inline (posición absoluta, opacidad 0.5, fuente 13px, etc.)
+  // y reescribe el texto ("AR NOT SUPPORTED" / "START AR"). Los neutralizamos: la
+  // apariencia la controla style.css.
+  enterARButton.removeAttribute('style');
+  enterARButton.onmouseenter = null;
+  enterARButton.onmouseleave = null;
 
-  let surfacePos = null;
+  $('enter-ar').appendChild(enterARButton);
+  enterARButton.textContent = '▶  Comenzar Realidad Aumentada';
+  enterARButton.addEventListener('click', () => requestOrientationPermission());
+  renderer.xr.addEventListener('sessionstart', onSessionStart);
+  renderer.xr.addEventListener('sessionend', onSessionEnd);
 
-  if (transientSource) {
-    const tr = frame.getHitTestResultsForTransientInput(transientSource);
-    if (tr.length && tr[0].results.length) {
-      const pose = tr[0].results[0].getPose(refSpace);
-      if (pose) {
-        surfacePos = new THREE.Vector3(pose.transform.position.x, pose.transform.position.y, pose.transform.position.z);
+  const status = $('xr-status');
+  if ('xr' in navigator && navigator.xr) {
+    navigator.xr.isSessionSupported('immersive-ar').then((ok) => {
+      if (!ok) {
+        enterARButton.textContent = 'RA no disponible en este dispositivo';
+        enterARButton.classList.add('ar-off');
+        status.textContent = 'Este dispositivo no soporta RA (WebXR AR)';
       }
-    }
-  }
-
-  if (!surfacePos && hitTestSource) {
-    const results = frame.getHitTestResults(hitTestSource);
-    if (results.length) {
-      const pose = results[0].getPose(refSpace);
-      if (pose) {
-        surfacePos = new THREE.Vector3(pose.transform.position.x, pose.transform.position.y, pose.transform.position.z);
-      }
-    }
-  }
-
-  if (surfacePos) {
-    reticle.position.copy(surfacePos);
-    reticle.visible = true;
+    }).catch(() => {
+      status.textContent = 'Error al comprobar WebXR';
+    });
   } else {
-    reticle.visible = false;
+    // Sin navigator.xr (escritorio/antiguo): ARButton devuelve un enlace, no un botón.
+    enterARButton.textContent = 'Este navegador no soporta RA';
+    enterARButton.classList.add('ar-off');
+    status.textContent = 'Este navegador no soporta RA. Usa Chrome/Android o Safari/iPhone recientes.';
   }
+}
 
-  updateDebugRay(surfacePos);
-  updateDebugPlanes(frame, refSpace);
-  debugCam.position.copy(camera.position);
-
-  if (placePending) {
-    placePending = false;
-    if (surfacePos) {
-      placeLabel(surfacePos);
+// iOS requiere permiso explícito para DeviceOrientation.
+function requestOrientationPermission() {
+  return new Promise((resolve) => {
+    const D = window.DeviceOrientationEvent;
+    if (D && typeof D.requestPermission === 'function') {
+      D.requestPermission().then((r) => {
+        if (r === 'granted') window.addEventListener('deviceorientation', onOrientation, true);
+        resolve();
+      }).catch(() => resolve());
     } else {
-      placeFree();
+      window.addEventListener('deviceorientation', onOrientation, true);
+      resolve();
     }
-  }
+  });
+}
 
-  renderer.render(scene, camera);
+function onOrientation(e) {
+  orientation = e;
+}
+
+/* ---------------- colocar globo ---------------- */
+
+// Toque directo sobre la cámara (gesto XR "select"): el golpe pasa por el área
+// transparente del overlay y cae al mundo, abriendo el colocador.
+function onXRSelect() {
+  if (!arOn || !origin) return;
+  const now = Date.now();
+  if (now - lastSelectAt < 500) return;
+  lastSelectAt = now;
+  openPlacer();
+}
+
+function openPlacer() {
+  if (!arOn) return toast('Entra a Realidad Aumentada');
+  if (!origin) return toast('Sin GPS: no hay dónde anclar el globo 📡');
+  currentPosition().then((p) => {
+    pendingPos = p;
+    $('input-name').value = '';
+    $('modal').classList.remove('hidden');
+    setTimeout(() => $('input-name').focus(), 120);
+  }).catch(() => toast('No se pudo leer la posición 📡'));
+}
+
+function commitPlace() {
+  if (!pendingPos || !origin) return;
+  const name = $('input-name').value.trim();
+  if (!name) return toast('Ponle un nombre al globo');
+  const c = pendingPos.coords;
+  balloons.push({
+    id: 'b' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
+    name,
+    icon: DEFAULT_ICON,
+    color: DEFAULT_COLOR,
+    lat: c.latitude,
+    lng: c.longitude,
+    alt: c.altitude || 0,
+    altOffset: ALT_OFFSET,
+    createdAt: Date.now()
+  });
+  save();
+  renderWorld();
+  showStatus();
+  $('modal').classList.add('hidden');
+  pendingPos = null;
+  toast('Globo "🎈 ' + name + '" fijado a tu GPS actual');
+}
+
+/* ---------------- export / import ---------------- */
+
+function exportScene() {
+  const blob = new Blob([JSON.stringify({ version: 1, exportedAt: new Date().toISOString(), balloons }, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'argps_balloons.json';
+  a.click();
+  URL.revokeObjectURL(a.href);
+  toast('⤓ Exportados ' + balloons.length + ' globos');
+}
+
+function importScene(file) {
+  const fr = new FileReader();
+  fr.onload = () => {
+    try {
+      const d = JSON.parse(fr.result);
+      if (!d || !Array.isArray(d.balloons)) throw new Error('bad');
+      const incoming = d.balloons.filter((b) => b && b.id && Number.isFinite(b.lat) && Number.isFinite(b.lng));
+      const map = new Map(balloons.map((b) => [b.id, b]));
+      for (const b of incoming) map.set(b.id, b);
+      balloons = Array.from(map.values());
+      save();
+      renderWorld();
+      showStatus();
+      toast('⤒ Importados ' + balloons.length + ' globos');
+    } catch {
+      toast('Archivo inválido');
+    }
+    $('import-file').value = '';
+  };
+  fr.readAsText(file);
+}
+
+/* ---------------- eventos ---------------- */
+
+$('btn-place').addEventListener('click', openPlacer);
+$('btn-modal-ok').addEventListener('click', commitPlace);
+$('input-name').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    commitPlace();
+  }
+});
+$('btn-modal-cancel').addEventListener('click', () => {
+  $('modal').classList.add('hidden');
+  pendingPos = null;
+});
+$('btn-export').addEventListener('click', exportScene);
+$('btn-import').addEventListener('click', () => $('import-file').click());
+$('import-file').addEventListener('change', (e) => {
+  const f = e.target.files && e.target.files[0];
+  if (f) importScene(f);
+});
+
+$('btn-nudgel').addEventListener('click', () => {
+  headingNudgeDeg -= 1;
+  updatePivot();
+  save();
+  refreshDbg();
+  toast('⟲ Mundo rotado −1° (total ' + headingNudgeDeg + '°)');
+});
+$('btn-nudger').addEventListener('click', () => {
+  headingNudgeDeg += 1;
+  updatePivot();
+  save();
+  refreshDbg();
+  toast('Mundo rotado +1° (total ' + headingNudgeDeg + '°)');
+});
+
+window.addEventListener('pointerdown', (e) => {
+  if (!arOn || !origin) return;
+  const t = e.target;
+  if (t instanceof Element && t.closest(IGNORED)) return;
+  openPlacer();
 });
 
 window.addEventListener('resize', () => {
@@ -390,21 +408,26 @@ window.addEventListener('resize', () => {
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
 
-const enterBtn = ARButton.createButton(renderer, { optionalFeatures: ['hit-test', 'plane-detection', 'dom-overlay'], domOverlay: { root: overlayRoot } });
-document.getElementById('enter-ar').appendChild(enterBtn);
-
-function neutralButton(ok, label) {
-  enterBtn.removeAttribute('style');
-  enterBtn.onmouseenter = null;
-  enterBtn.onmouseleave = null;
-  enterBtn.textContent = label;
-  enterBtn.classList.toggle('ar-off', !ok);
+function refreshDbg() {
+  const dbg = $('dbg');
+  if (dbg.classList.contains('hidden')) return;
+  dbg.textContent =
+    'az ' + deviceHeadingDeg().toFixed(0) + '° · nudge ' + headingNudgeDeg + '°' +
+    (origin ? ' · origen: ' + origin.lat.toFixed(5) + ', ' + origin.lng.toFixed(5) : '');
 }
 
-if ('xr' in navigator && navigator.xr) {
-  navigator.xr.isSessionSupported('immersive-ar').then((ok) => {
-    neutralButton(ok, ok ? '▶  Comenzar Realidad Aumentada' : 'RA no disponible en este dispositivo');
-  }).catch(() => {});
-} else {
-  neutralButton(false, 'Este navegador no soporta RA');
+renderer.setAnimationLoop(() => {
+  refreshDbg();
+  renderer.render(scene, camera);
+});
+
+let toastTimer = null;
+function toast(msg) {
+  const el = $('toast');
+  el.textContent = msg;
+  el.classList.remove('hidden');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.add('hidden'), 2600);
 }
+
+initAR();
