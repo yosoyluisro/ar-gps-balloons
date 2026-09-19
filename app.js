@@ -4,7 +4,6 @@ import { deltaMeters, metersToDelta, degToRad, radToDeg } from './geo.js';
 
 const LS = 'argps.v1';
 const ALT_OFFSET = 1.6;        // altura de los globos sobre el nivel de origen (m)
-const DEFAULT_ICON = '🎈';
 const DEFAULT_COLOR = '#29fff0';
 const IGNORED = 'button,input,select,textarea,.modal,.toast,.panel,.hud-top,.status-bar,.dbg';
 
@@ -111,6 +110,37 @@ function updatePivot() {
 
 /* ---------------- textura / sprites de globo ---------------- */
 
+function esc(s) {
+  return String(s).replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+}
+
+function drawBalloonIcon(g, cx, cy, color) {
+  const r = 34;
+  g.save();
+  const grad = g.createRadialGradient(cx - 8, cy - 8, 4, cx, cy, r);
+  grad.addColorStop(0, '#ffffff');
+  grad.addColorStop(0.35, color);
+  grad.addColorStop(1, color);
+  g.fillStyle = grad;
+  g.beginPath();
+  g.ellipse(cx, cy, r, r * 1.12, 0, 0, Math.PI * 2);
+  g.fill();
+  g.fillStyle = color;
+  g.beginPath();
+  g.moveTo(cx - 7, cy + r * 1.12);
+  g.lineTo(cx + 7, cy + r * 1.12);
+  g.lineTo(cx, cy + r * 1.12 + 12);
+  g.closePath();
+  g.fill();
+  g.strokeStyle = 'rgba(255,255,255,0.65)';
+  g.lineWidth = 2;
+  g.beginPath();
+  g.moveTo(cx, cy + r * 1.12 + 12);
+  g.quadraticCurveTo(cx + 14, cy + r * 1.12 + 30, cx - 4, cy + r * 1.12 + 48);
+  g.stroke();
+  g.restore();
+}
+
 function balloonTexture(name, color) {
   const c = document.createElement('canvas');
   c.width = 320;
@@ -124,10 +154,7 @@ function balloonTexture(name, color) {
   g.roundRect(16, 8, 288, 168, 24);
   g.fill();
   g.stroke();
-  g.font = 'bold 70px system-ui, sans-serif';
-  g.textAlign = 'center';
-  g.textBaseline = 'middle';
-  g.fillText(DEFAULT_ICON, 160, 86);
+  drawBalloonIcon(g, 160, 90, color || DEFAULT_COLOR);
   g.font = '600 30px system-ui, sans-serif';
   g.fillStyle = '#ffffff';
   g.fillText((name || '').slice(0, 18), 160, 216);
@@ -199,7 +226,7 @@ function setMode(m) {
   $('mode-reg').classList.toggle('active', isReg);
   $('mode-view').classList.toggle('active', !isReg);
   const btnMode = $('btn-mode');
-  if (btnMode) btnMode.textContent = isReg ? '🗂 Registrar' : '👁 Solo visualizar';
+  if (btnMode) btnMode.innerHTML = isReg ? '<i class="fa-solid fa-folder-open"></i> Registrar' : '<i class="fa-solid fa-eye"></i> Solo visualizar';
   if (arOn) toast(isReg ? 'Modo Registrar · toca para dejar globos' : 'Modo Solo visualizar · no se dejan globos');
 }
 
@@ -219,7 +246,7 @@ function onSessionStart() {
     updatePivot();
     renderWorld();
     showStatus();
-    toast(p ? 'Origin GPS fijado · deja tu primer globo 🎈' : 'Sin GPS: los globos se fijan cerca de ti 🎈');
+    toast(p ? '<i class="fa-solid fa-satellite-dish"></i> Origin GPS fijado · deja tu primer globo' : '<i class="fa-solid fa-triangle-exclamation"></i> Sin GPS: los globos se fijan cerca de ti');
   })();
 }
 
@@ -334,8 +361,8 @@ function onXRSelect() {
       save();
       renderWorld();
       showStatus();
-      toast('Globo movido a tu GPS actual 🎯');
-    }).catch(() => toast('No se pudo leer la posición 📡'));
+      toast('<i class="fa-solid fa-crosshairs"></i> Globo movido a tu GPS actual');
+    }).catch(() => toast('<i class="fa-solid fa-satellite-dish"></i> No se pudo leer la posición'));
     return;
   }
   const bid = findHitBalloon();
@@ -352,7 +379,7 @@ function openEdit(id) {
   const b = balloons.find((x) => x.id === id);
   if (!b) return;
   editingId = id;
-  $('edit-title').textContent = '🎈 ' + (b.name || 'Globo');
+  $('edit-title').textContent = (b.name || 'Globo');
   $('edit-info').textContent = 'Lat ' + b.lat.toFixed(6) + ' · Lng ' + b.lng.toFixed(6) + (b.createdAt ? ' · ' + new Date(b.createdAt).toLocaleString() : '');
   $('edit-modal').classList.remove('hidden');
 }
@@ -376,7 +403,7 @@ function nudgeBalloon(eastM, northM) {
   renderWorld();
   showStatus();
   openEdit(b.id);
-  toast('Globo movido 🎯');
+  toast('<i class="fa-solid fa-crosshairs"></i> Globo movido');
 }
 
 function deleteEditingBalloon() {
@@ -387,7 +414,7 @@ function deleteEditingBalloon() {
   renderWorld();
   showStatus();
   closeEdit();
-  toast('Globo borrado 🗑');
+  toast('<i class="fa-solid fa-trash"></i> Globo borrado');
 }
 
 function renameEditingBalloon() {
@@ -400,14 +427,14 @@ function renameEditingBalloon() {
   renderWorld();
   showStatus();
   openEdit(b.id);
-  toast('Globo renombrado ✏️');
+  toast('<i class="fa-solid fa-pen"></i> Globo renombrado');
 }
 
 function moveEditingBalloon() {
   const b = currentEditBalloon();
   if (!b) return;
   closeEdit();
-  toast('Apunta al lugar y toca para mover 🎯');
+  toast('<i class="fa-solid fa-crosshairs"></i> Apunta al lugar y toca para mover');
   pendingMoveId = b.id;
 }
 
@@ -415,21 +442,21 @@ let pendingMoveId = null;
 
 function openPlacer() {
   if (!arOn) return toast('Entra a Realidad Aumentada');
-  if (mode === 'view') return toast('Modo Solo visualizar · no puedes dejar globos 👁');
-  if (!origin) return toast('Sin GPS: no hay dónde anclar el globo 📡');
+  if (mode === 'view') return toast('<i class="fa-solid fa-eye"></i> Modo Solo visualizar · no puedes dejar globos');
+  if (!origin) return toast('<i class="fa-solid fa-satellite-dish"></i> Sin GPS: no hay dónde anclar el globo');
   currentPosition().then((p) => {
     pendingPos = p;
     $('input-name').value = '';
     $('modal').classList.remove('hidden');
     setTimeout(() => $('input-name').focus(), 120);
-  }).catch(() => toast('No se pudo leer la posición 📡'));
+  }).catch(() => toast('<i class="fa-solid fa-satellite-dish"></i> No se pudo leer la posición'));
 }
 
 function commitPlace() {
   if (mode === 'view') {
     $('modal').classList.add('hidden');
     pendingPos = null;
-    return toast('Modo Solo visualizar · no puedes dejar globos 👁');
+    return toast('<i class="fa-solid fa-eye"></i> Modo Solo visualizar · no puedes dejar globos');
   }
   if (!pendingPos || !origin) return;
   const name = $('input-name').value.trim();
@@ -451,7 +478,7 @@ function commitPlace() {
   showStatus();
   $('modal').classList.add('hidden');
   pendingPos = null;
-  toast('Globo "🎈 ' + name + '" fijado a tu GPS actual');
+  toast('<i class="fa-solid fa-location-dot"></i> Globo "' + esc(name) + '" fijado a tu GPS actual');
 }
 
 /* ---------------- export / import ---------------- */
@@ -463,7 +490,7 @@ function exportScene() {
   a.download = 'argps_balloons.json';
   a.click();
   URL.revokeObjectURL(a.href);
-  toast('⤓ Exportados ' + balloons.length + ' globos');
+  toast('<i class="fa-solid fa-download"></i> Exportados ' + balloons.length + ' globos');
 }
 
 function importScene(file) {
@@ -479,7 +506,7 @@ function importScene(file) {
       save();
       renderWorld();
       showStatus();
-      toast('⤒ Importados ' + balloons.length + ' globos');
+      toast('<i class="fa-solid fa-file-import"></i> Importados ' + balloons.length + ' globos');
     } catch {
       toast('Archivo inválido');
     }
@@ -527,7 +554,7 @@ $('btn-nudgel').addEventListener('click', () => {
   updatePivot();
   save();
   refreshDbg();
-  toast('⟲ Mundo rotado −1° (total ' + headingNudgeDeg + '°)');
+  toast('<i class="fa-solid fa-rotate-left"></i> Mundo rotado −1° (total ' + headingNudgeDeg + '°)');
 });
 $('btn-nudger').addEventListener('click', () => {
   headingNudgeDeg += 1;
@@ -694,7 +721,7 @@ renderer.setAnimationLoop(() => {
 let toastTimer = null;
 function toast(msg) {
   const el = $('toast');
-  el.textContent = msg;
+  el.innerHTML = msg;
   el.classList.remove('hidden');
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => el.classList.add('hidden'), 2600);
