@@ -465,7 +465,6 @@ function commitPlace() {
   balloons.push({
     id: 'b' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
     name,
-    icon: DEFAULT_ICON,
     color: DEFAULT_COLOR,
     lat: c.latitude,
     lng: c.longitude,
