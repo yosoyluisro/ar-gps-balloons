@@ -10,9 +10,9 @@ su nombre y queda fijo en ese lugar, flotando a poca altura.
 - **Persistencia local**: los globos que guardas vuelven a aparecer al volver a entrar
   (se guardan en el almacenamiento del dispositivo, clave `argps.v1`).
 - **Dos tipos de globo**: **marcador** (fija un lugar con su nombre) y **way tracker**
-  (punto de paso). El camino se dibuja como una linea 3D que une los globos en el orden
-  en que los colocaste, y se reconecta solo si borras uno del medio.
-- **Version actual**: v0.9.0
+  (punto de paso). Con dos marcadores A y B creas un **camino** ("Sala -> Cocina") y lo
+  trazas con way trackers; cada camino dibuja su propia linea 3D.
+- **Version actual**: v0.10.0
 
 > La calidad del anclaje depende del *hit-test* del dispositivo (ARCore en Android, ARKit
 > en iPhone): necesita una superficie detectable e iluminacion decente.
@@ -47,14 +47,16 @@ Es un tunel HTTPS publico hacia tu PC; no hay que instalar nada en el telefono.
    superficie detectada. Abajo hay un HUD flotante con los botones.
 3. Elige el tipo en el HUD (el boton activo queda resaltado):
    - **Agregar marcador**: fija un lugar. Despues de colocarlo escribe el nombre y pulsa **Aceptar**.
-   - **Agregar way tracker**: deja un punto de paso instantaneo (sin nombre) para trazar el
-     camino entre marcadores.
+   - **Agregar way tracker**: deja un punto de paso instantaneo (sin nombre) dentro del
+     camino que estes editando.
 4. Tambien puedes **tocar la pantalla** para colocar el tipo activo en el punto de la reticula.
-5. Cada globo que colocas se **conecta con el anterior**: el camino se dibuja como una linea
-   3D flotante que une los globos en orden de colocacion.
-6. Pulsa **Mis globos (N)** para ver la lista (marcadores con su nombre, ways como "Punto N");
-   usa **Eliminar** para borrar un globo. Si borras uno del medio, la ruta se reconecta.
-7. Al volver a entrar, los globos y el camino guardados aparecen de nuevo en su lugar.
+5. Para crear un camino: abre **Mis globos (N)**, marca dos marcadores con **A** y **B**,
+   y pulsa **Crear camino**. Entras en modo edicion (chip "Camino: A -> B" en el HUD):
+   cada way que coloques se agrega al final de ese tramo. Pulsa **Salir** para terminar.
+6. La lista muestra **Caminos** (nombre, puntos, [Editar], [Eliminar], con sus ways anidados)
+   y **Marcadores** (nombre, [A] [B], [Eliminar]). Borrar un extremo A/B elimina el camino
+   con sus ways; borrar un punto del medio reconecta la linea.
+7. Al volver a entrar, los globos, los caminos y el camino en edicion aparecen de nuevo.
 
 ## QR de acceso
 
@@ -65,7 +67,12 @@ La tarjeta de inicio muestra un QR con la URL de la app para abrirla rapido en e
 
 Estado estable en la rama `main`.
 
-- **v0.9.0** (checkpoint actual) — dos tipos de globo: **marcador** (fija un lugar con su
+- **v0.10.0** (checkpoint actual) — caminos A->B: eliges dos marcadores en Mis globos
+  y creas un camino ("Sala -> Cocina") que editas con way trackers; una linea 3D por camino,
+  chip de camino en edicion en el HUD, lista en secciones Caminos/Marcadores. Persistencia v2
+  (globs + caminos en `argps.v1`) con migracion de datos v0.9.0 a "Camino 1". Borrar un extremo
+  elimina el camino con sus ways; borrar del medio reconecta.
+- **v0.9.0** (`5dcd462`) — dos tipos de globo: **marcador** (fija un lugar con su
   nombre) y **way tracker** (punto de paso sin nombre). El camino se dibuja como una linea
   3D (fat lines) que une los globos en orden de colocacion y se reconecta al borrar. HUD
   con dos botones + tipo activo resaltado (el toque coloca el tipo activo). Migracion de

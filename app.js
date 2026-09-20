@@ -34,7 +34,7 @@ const nameOk = document.getElementById('label-ok');
 const overlayRoot = document.getElementById('overlay');
 const qrEl = document.getElementById('qr');
 const versionEl = document.getElementById('version');
-const APP_VERSION = '0.9.0';
+const APP_VERSION = '0.10.0';
 
 function pagesUrl() {
   const h = location.hostname;
@@ -65,63 +65,231 @@ function newBalloonId() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 }
 
-/* ---------------- persistencia (los globos vuelven al entrar) ---------------- */
+/* ---------------- persistencia v2: globos + caminos ---------------- */
 
-let balloonsList = loadBalloons();
+let store = loadStore();
+let balloonsList = store.balloons;
+let pathsList = store.paths;
+let pathCounter = store.pathN;
+let activePathId = store.activePath;
+let selA = null;
+let selB = null;
 
-function loadBalloons() {
-  try {
-    const v = JSON.parse(localStorage.getItem(LS));
-    if (v && Array.isArray(v)) return v.filter((b) => b && Number.isFinite(b.x) && Number.isFinite(b.z)).map((b) => ({ tipo: 'marcador', ...b }));
-  } catch { /* */ }
-  return [];
+function cleanBalloons(arr) {
+  const out = [];
+  for (const b of arr) {
+    if (!b || !Number.isFinite(b.x) || !Number.isFinite(b.z)) continue;
+    if (!b.id) b.id = newBalloonId();
+    if (!b.tipo) b.tipo = 'marcador';
+    out.push(b);
+  }
+  return out;
 }
 
-function saveBalloons() {
+function migrateV1(arr) {
+  const balloons = cleanBalloons(arr);
+  const paths = [];
+  let activePath = null;
+  if (balloons.length) {
+    const pid = newBalloonId();
+    for (const b of balloons) {
+      if (b.tipo === 'way' && !b.pathId) b.pathId = pid;
+    }
+    paths.push({ id: pid, n: 1, seq: balloons.map((b) => b.id) });
+    activePath = pid;
+  }
+  return { v: 2, balloons, paths, pathN: 1, activePath };
+}
+
+function loadStore() {
   try {
-    localStorage.setItem(LS, JSON.stringify(balloonsList));
+    const v = JSON.parse(localStorage.getItem(LS));
+    if (v && Array.isArray(v)) return migrateV1(v);
+    if (v && v.v === 2 && Array.isArray(v.balloons)) {
+      const balloons = cleanBalloons(v.balloons);
+      const ids = new Set(balloons.map((b) => b.id));
+      const paths = Array.isArray(v.paths) ? v.paths.filter((p) => p && p.id && Array.isArray(p.seq) && p.seq.length >= 2 && p.seq.every((id) => ids.has(id))) : [];
+      const pids = new Set(paths.map((p) => p.id));
+      for (const b of balloons) {
+        if (b.tipo === 'way' && !pids.has(b.pathId)) delete b.pathId;
+      }
+      const activePath = pids.has(v.activePath) ? v.activePath : null;
+      return { v: 2, balloons, paths, pathN: Number.isFinite(v.pathN) ? v.pathN : paths.length, activePath };
+    }
+  } catch { /* */ }
+  return { v: 2, balloons: [], paths: [], pathN: 0, activePath: null };
+}
+
+function saveStore() {
+  try {
+    localStorage.setItem(LS, JSON.stringify({ v: 2, balloons: balloonsList, paths: pathsList, pathN: pathCounter, activePath: activePathId }));
   } catch {
     toast('No se pudo guardar (almacenamiento lleno)');
   }
 }
 
+function balloonById(id) {
+  return balloonsList.find((b) => b.id === id) || null;
+}
+
+function pathById(id) {
+  return pathsList.find((p) => p.id === id) || null;
+}
+
+function pathName(p) {
+  const a = balloonById(p.seq[0]);
+  const b = balloonById(p.seq[p.seq.length - 1]);
+  if (a && b && a.tipo !== 'way' && b.tipo !== 'way') {
+    return (a.name || 'Marcador') + ' -> ' + (b.name || 'Marcador');
+  }
+  return 'Camino ' + p.n;
+}
+
+function wayIndexInPath(pathId, wayId) {
+  const p = pathById(pathId);
+  if (!p) return 0;
+  let k = 0;
+  for (const id of p.seq) {
+    const b = balloonById(id);
+    if (b && b.tipo === 'way') {
+      k++;
+      if (id === wayId) return k;
+    }
+  }
+  return k;
+}
+
 const listPanel = document.getElementById('balloon-list');
 const listCount = document.getElementById('list-count');
+
+function markerRow(b) {
+  const row = document.createElement('div');
+  row.className = 'list-row';
+  const dot = document.createElement('span');
+  dot.className = 'list-dot marker';
+  const name = document.createElement('span');
+  name.className = 'list-name';
+  name.textContent = b.name || 'Marcador';
+  const btnA = document.createElement('button');
+  btnA.type = 'button';
+  btnA.className = 'list-mini' + (selA === b.id ? ' sel' : '');
+  btnA.textContent = 'A';
+  btnA.addEventListener('click', () => {
+    selA = selA === b.id ? null : b.id;
+    if (selA && selA === selB) selB = null;
+    renderBalloonList();
+  });
+  const btnB = document.createElement('button');
+  btnB.type = 'button';
+  btnB.className = 'list-mini' + (selB === b.id ? ' sel' : '');
+  btnB.textContent = 'B';
+  btnB.addEventListener('click', () => {
+    selB = selB === b.id ? null : b.id;
+    if (selB && selB === selA) selA = null;
+    renderBalloonList();
+  });
+  const del = document.createElement('button');
+  del.type = 'button';
+  del.className = 'list-del';
+  del.textContent = 'Eliminar';
+  del.addEventListener('click', () => deleteBalloon(b.id));
+  row.appendChild(dot);
+  row.appendChild(name);
+  row.appendChild(btnA);
+  row.appendChild(btnB);
+  row.appendChild(del);
+  return row;
+}
+
+function wayRow(b) {
+  const row = document.createElement('div');
+  row.className = 'list-row list-way';
+  const dot = document.createElement('span');
+  dot.className = 'list-dot way';
+  const name = document.createElement('span');
+  name.className = 'list-name';
+  name.textContent = 'Punto ' + Math.max(1, wayIndexInPath(b.pathId, b.id));
+  const del = document.createElement('button');
+  del.type = 'button';
+  del.className = 'list-del';
+  del.textContent = 'Eliminar';
+  del.addEventListener('click', () => deleteBalloon(b.id));
+  row.appendChild(dot);
+  row.appendChild(name);
+  row.appendChild(del);
+  return row;
+}
 
 function renderBalloonList() {
   listCount.textContent = String(balloonsList.length);
   listPanel.innerHTML = '';
-  if (!balloonsList.length) {
+  const markers = balloonsList.filter((b) => b.tipo !== 'way');
+  if (!pathsList.length && !markers.length) {
     const empty = document.createElement('p');
     empty.className = 'list-empty';
-    empty.textContent = 'Aun no hay globos. Toca Agregar marcador o way tracker.';
+    empty.textContent = 'Aun no hay globos. Toca Agregar marcador para empezar.';
     listPanel.appendChild(empty);
     return;
   }
-  balloonsList.forEach((b, i) => {
-    const row = document.createElement('div');
-    row.className = 'list-row';
-    const dot = document.createElement('span');
-    dot.className = 'list-dot ' + (b.tipo === 'way' ? 'way' : 'marker');
-    const name = document.createElement('span');
-    name.className = 'list-name';
-    name.textContent = b.tipo === 'way' ? 'Punto ' + (i + 1) : (b.name || 'Marcador');
-    const del = document.createElement('button');
-    del.type = 'button';
-    del.className = 'list-del';
-    del.textContent = 'Eliminar';
-    del.addEventListener('click', () => deleteBalloon(b.id));
-    row.appendChild(dot);
-    row.appendChild(name);
-    row.appendChild(del);
-    listPanel.appendChild(row);
-  });
+  const mA = selA ? balloonById(selA) : null;
+  const mB = selB ? balloonById(selB) : null;
+  if (mA && mB && selA !== selB && mA.tipo !== 'way' && mB.tipo !== 'way') {
+    const mk = document.createElement('button');
+    mk.type = 'button';
+    mk.id = 'btn-create-path';
+    mk.textContent = 'Crear camino: ' + (mA.name || 'Marcador') + ' -> ' + (mB.name || 'Marcador');
+    mk.addEventListener('click', () => createPath(selA, selB));
+    listPanel.appendChild(mk);
+  }
+  if (pathsList.length) {
+    const h = document.createElement('p');
+    h.className = 'list-sec';
+    h.textContent = 'Caminos';
+    listPanel.appendChild(h);
+    for (const p of pathsList) {
+      const row = document.createElement('div');
+      row.className = 'list-row';
+      const dot = document.createElement('span');
+      dot.className = 'list-dot path' + (activePathId === p.id ? ' on' : '');
+      const name = document.createElement('span');
+      name.className = 'list-name';
+      let ways = 0;
+      for (const id of p.seq) {
+        const b = balloonById(id);
+        if (b && b.tipo === 'way') ways++;
+      }
+      name.textContent = pathName(p) + ' (' + ways + ' punto' + (ways === 1 ? '' : 's') + ')';
+      const ed = document.createElement('button');
+      ed.type = 'button';
+      ed.className = 'list-mini' + (activePathId === p.id ? ' sel' : '');
+      ed.textContent = 'Editar';
+      ed.addEventListener('click', () => setActivePath(p.id));
+      const del = document.createElement('button');
+      del.type = 'button';
+      del.className = 'list-del';
+      del.textContent = 'Eliminar';
+      del.addEventListener('click', () => deletePath(p.id));
+      row.appendChild(dot);
+      row.appendChild(name);
+      row.appendChild(ed);
+      row.appendChild(del);
+      listPanel.appendChild(row);
+      for (const id of p.seq) {
+        const b = balloonById(id);
+        if (b && b.tipo === 'way') listPanel.appendChild(wayRow(b));
+      }
+    }
+  }
+  if (markers.length) {
+    const h = document.createElement('p');
+    h.className = 'list-sec';
+    h.textContent = 'Marcadores (elige A y B para un camino)';
+    listPanel.appendChild(h);
+    for (const b of markers) listPanel.appendChild(markerRow(b));
+  }
 }
 
-function deleteBalloon(id) {
-  const idx = balloonsList.findIndex((b) => b.id === id);
-  if (idx === -1) return;
-  balloonsList.splice(idx, 1);
+function removeBalloonVisual(id) {
   const group = balloonGroups.get(id);
   if (group) {
     scene.remove(group);
@@ -131,15 +299,118 @@ function deleteBalloon(id) {
     });
     balloonGroups.delete(id);
   }
+}
+
+function createPath(aId, bId) {
+  const a = balloonById(aId);
+  const b = balloonById(bId);
+  if (!a || !b || aId === bId || a.tipo === 'way' || b.tipo === 'way') {
+    toast('Elige dos marcadores distintos');
+    return;
+  }
+  pathCounter++;
+  const p = { id: newBalloonId(), n: pathCounter, seq: [aId, bId] };
+  pathsList.push(p);
+  selA = null;
+  selB = null;
+  setActivePath(p.id);
+  saveStore();
+  renderBalloonList();
+  rebuildPaths();
+}
+
+function deletePath(pathId) {
+  const pi = pathsList.findIndex((p) => p.id === pathId);
+  if (pi === -1) return;
+  const p = pathsList[pi];
+  const wayIds = p.seq.filter((id) => {
+    const b = balloonById(id);
+    return b && b.tipo === 'way';
+  });
+  pathsList.splice(pi, 1);
+  for (const wid of wayIds) {
+    const bi = balloonsList.findIndex((b) => b.id === wid);
+    if (bi !== -1) balloonsList.splice(bi, 1);
+    removeBalloonVisual(wid);
+    if (pendingBalloonId === wid) {
+      pendingBalloonId = null;
+      pendingBalloonPos = null;
+    }
+  }
+  if (activePathId === pathId) activePathId = null;
+  balloons = Math.max(0, balloonsList.length);
+  saveStore();
+  renderBalloonList();
+  rebuildPaths();
+  renderPathChip();
+  toast('Camino eliminado');
+}
+
+function setActivePath(id) {
+  const p = id ? pathById(id) : null;
+  activePathId = p ? p.id : null;
+  saveStore();
+  renderPathChip();
+  renderBalloonList();
+  if (p) toast('Editando camino ' + pathName(p));
+}
+
+function renderPathChip() {
+  const chip = document.getElementById('path-chip');
+  const lbl = document.getElementById('path-chip-name');
+  if (!chip || !lbl) return;
+  const p = activePathId ? pathById(activePathId) : null;
+  if (!p) {
+    activePathId = null;
+    chip.classList.add('hidden');
+    return;
+  }
+  lbl.textContent = 'Camino: ' + pathName(p);
+  chip.classList.remove('hidden');
+}
+
+function deleteBalloon(id) {
+  const idx = balloonsList.findIndex((b) => b.id === id);
+  if (idx === -1) return;
+  balloonsList.splice(idx, 1);
+  removeBalloonVisual(id);
   if (pendingBalloonId === id) {
     pendingBalloonId = null;
     pendingBalloonPos = null;
   }
+  if (selA === id) selA = null;
+  if (selB === id) selB = null;
+  let killed = 0;
+  const deadPaths = [];
+  for (const p of pathsList) {
+    const at = p.seq.indexOf(id);
+    if (at === -1) continue;
+    p.seq.splice(at, 1);
+    if (at === 0 || at === p.seq.length || p.seq.length < 2) deadPaths.push(p.id);
+  }
+  for (const pid of deadPaths) {
+    const pi = pathsList.findIndex((p) => p.id === pid);
+    if (pi === -1) continue;
+    const p = pathsList[pi];
+    pathsList.splice(pi, 1);
+    killed++;
+    for (const wid of p.seq) {
+      if (wid === id) continue;
+      const b = balloonById(wid);
+      if (b && b.tipo === 'way') {
+        const bi = balloonsList.findIndex((x) => x.id === wid);
+        if (bi !== -1) balloonsList.splice(bi, 1);
+        removeBalloonVisual(wid);
+      }
+    }
+  }
+  if (activePathId && !pathById(activePathId)) activePathId = null;
   balloons = Math.max(0, balloonsList.length);
-  saveBalloons();
+  saveStore();
   renderBalloonList();
-  rebuildPath();
-  toast('Globo eliminado');
+  rebuildPaths();
+  renderPathChip();
+  toast(killed ? 'Globo y camino eliminados' : 'Globo eliminado');
 }
 
 document.getElementById('btn-list').addEventListener('click', () => {
@@ -161,7 +432,7 @@ function restoreBalloons() {
     }
     balloonGroups.set(b.id, group);
   }
-  rebuildPath();
+  rebuildPaths();
 }
 
 function orbTexture(color) {
@@ -236,28 +507,32 @@ function makeLabelSprite(text) {
   return spr;
 }
 
-/* ---------------- camino: linea 3D que une los globos en orden ---------------- */
+/* ---------------- caminos: una linea 3D por camino (A -> ways -> B) ---------------- */
 
 const pathMat = new LineMaterial({ color: LINE_COLOR, transparent: true, opacity: 0.75, linewidth: 4, depthTest: true, depthWrite: false });
 pathMat.resolution.set(window.innerWidth, window.innerHeight);
-let pathLine = null;
+let pathLines = [];
 
-function rebuildPath() {
-  if (pathLine) {
-    scene.remove(pathLine);
-    pathLine.geometry.dispose();
-    pathLine = null;
+function rebuildPaths() {
+  for (const line of pathLines) {
+    scene.remove(line);
+    line.geometry.dispose();
   }
-  if (balloonsList.length < 2) return;
-  const pts = [];
-  for (const b of balloonsList) {
-    pts.push(b.x, (b.y ?? FLOAT_ABOVE) + FLOAT_ABOVE, b.z);
+  pathLines = [];
+  for (const p of pathsList) {
+    const pts = [];
+    for (const id of p.seq) {
+      const b = balloonById(id);
+      if (b) pts.push(b.x, (b.y ?? FLOAT_ABOVE) + FLOAT_ABOVE, b.z);
+    }
+    if (pts.length < 6) continue;
+    const geo = new LineGeometry();
+    geo.setPositions(pts);
+    const line = new Line2(geo, pathMat);
+    line.frustumCulled = false;
+    scene.add(line);
+    pathLines.push(line);
   }
-  const geo = new LineGeometry();
-  geo.setPositions(pts);
-  pathLine = new Line2(geo, pathMat);
-  pathLine.frustumCulled = false;
-  scene.add(pathLine);
 }
 
 function applyLabel(spr, text) {
@@ -279,17 +554,28 @@ function makeBallGroup(tipo) {
 }
 
 function commitBalloon(tipo, pos) {
+  if (tipo === 'way') {
+    const p = activePathId ? pathById(activePathId) : null;
+    if (!p) {
+      activePathId = null;
+      renderPathChip();
+      toast('Crea o elige un camino en Mis globos');
+      return;
+    }
+  }
   const group = makeBallGroup(tipo);
   group.position.copy(pos);
   balloons++;
   const id = newBalloonId();
   balloonGroups.set(id, group);
   if (tipo === 'way') {
-    balloonsList.push({ id, tipo, x: pos.x, y: pos.y, z: pos.z });
-    saveBalloons();
+    const p = pathById(activePathId);
+    balloonsList.push({ id, tipo, pathId: p.id, x: pos.x, y: pos.y, z: pos.z });
+    p.seq.splice(Math.max(0, p.seq.length - 1), 0, id);
+    saveStore();
     renderBalloonList();
-    rebuildPath();
-    toast('Punto agregado a la ruta');
+    rebuildPaths();
+    toast('Punto agregado al camino');
     return;
   }
   const label = makeLabelSprite('Globo ' + balloons);
@@ -326,9 +612,9 @@ nameOk.addEventListener('click', () => {
       });
       pendingBalloonPos = null;
       pendingBalloonId = null;
-      saveBalloons();
+      saveStore();
       renderBalloonList();
-      rebuildPath();
+      rebuildPaths();
     }
     labelWaiting = null;
   }
@@ -380,6 +666,10 @@ document.getElementById('btn-way').addEventListener('click', () => {
   placeBalloon(true);
 });
 setActiveTipo('marcador');
+
+document.getElementById('btn-path-exit').addEventListener('click', () => {
+  setActivePath(null);
+});
 
 async function setupHitTest() {
   try {
@@ -508,11 +798,14 @@ function onSessionStart() {
   transientSource = null;
   labelWaiting = null;
   pendingBalloonPos = null;
+  selA = null;
+  selB = null;
   restoreBalloons();
   hideNamePrompt();
   countEl.textContent = '';
   startEl.classList.add('hidden');
   renderBalloonList();
+  renderPathChip();
   setupHitTest();
   renderer.xr.getSession().addEventListener('select', onSelect);
 }
