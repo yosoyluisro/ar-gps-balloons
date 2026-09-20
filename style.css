@@ -7,6 +7,7 @@
   --accent: #29fff0;
   --accent2: #ff2ef0;
   --grad: linear-gradient(90deg, var(--accent), var(--accent2));
+  --sq: min(88vw, 44vh);
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -38,7 +39,7 @@ button { font-family: inherit; }
   pointer-events: none;
 }
 
-/* Cuadrado de la camara: lado = min(50vh, 100vw), centrado en la mitad superior */
+/* Cuadrado de la camara: lado = min(88vw, 44vh), centrado en la mitad superior */
 #ar-letterbox-t, #ar-letterbox-b,
 #ar-letterbox-l, #ar-letterbox-r {
   position: fixed;
@@ -49,21 +50,21 @@ button { font-family: inherit; }
 /* tapar arriba del cuadrado (dentro de la mitad superior) */
 #ar-letterbox-t {
   top: 0; left: 0; right: 0;
-  height: calc((50vh - min(50vh, 100vw)) / 2);
+  height: calc((50vh - var(--sq)) / 2);
 }
 /* tapar abajo del cuadrado (justo encima del panel) */
 #ar-letterbox-b {
   bottom: 50vh; left: 0; right: 0;
-  height: calc((50vh - min(50vh, 100vw)) / 2);
+  height: calc((50vh - var(--sq)) / 2);
 }
 /* tapar laterales del cuadrado */
 #ar-letterbox-l {
   top: 0; bottom: 50vh; left: 0;
-  width: calc((100vw - min(50vh, 100vw)) / 2);
+  width: calc((100vw - var(--sq)) / 2);
 }
 #ar-letterbox-r {
   top: 0; bottom: 50vh; right: 0;
-  width: calc((100vw - min(50vh, 100vw)) / 2);
+  width: calc((100vw - var(--sq)) / 2);
 }
 
 /* panel inferior: ocupa la mitad de abajo, OPACO (no deja ver la camara) */
@@ -77,7 +78,7 @@ button { font-family: inherit; }
   pointer-events: auto;
   display: flex;
   flex-direction: column;
-  justify-content: flex-end;
+  justify-content: center;
   align-items: stretch;
   gap: 10px;
   padding: 16px 16px calc(16px + env(safe-area-inset-bottom));
