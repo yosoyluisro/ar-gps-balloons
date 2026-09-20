@@ -1,6 +1,6 @@
 :root {
   --bg: #05060f;
-  --panel: rgba(13, 17, 34, 0.86);
+  --panel: rgba(9, 12, 27, 0.94);
   --line: rgba(120, 140, 255, 0.22);
   --txt: #e8ecff;
   --dim: #9aa3c7;
@@ -28,7 +28,96 @@ html, body {
 
 button { font-family: inherit; }
 
-/* pantalla de inicio */
+/* ============ SPLIT 50/50 ============ */
+/* La cámara (canvas) llena todo por requisito de WebXR; visualmente se ve
+   en la MITAD SUPERIOR como un cuadrado (letterbox) y la mitad inferior
+   queda cubierta por el panel de control opaco. */
+
+#overlay {
+  position: fixed; inset: 0; z-index: 40;
+  pointer-events: none;
+}
+#overlay > * { pointer-events: auto; }
+
+/* letterbox: enmarca la cámara como cuadrado en la mitad superior */
+#ar-letterbox-l, #ar-letterbox-r {
+  position: fixed;
+  top: 0; bottom: 50vh;
+  width: calc((100vw - min(50vh, 100vw)) / 2);
+  background: var(--bg);
+  z-index: 5;
+  pointer-events: none;
+}
+#ar-letterbox-l { left: 0; }
+#ar-letterbox-r { right: 0; }
+
+/* panel inferior: ocupa la mitad de abajo y tapa la cámara ahí */
+#panel-bottom {
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  height: 50vh;
+  z-index: 20;
+  background: var(--panel);
+  border-top: 1px solid var(--line);
+  backdrop-filter: blur(12px);
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: stretch;
+  gap: 10px;
+  padding: 16px 16px calc(16px + env(safe-area-inset-bottom));
+}
+
+#btn-add {
+  width: 100%;
+  padding: 17px;
+  border: none;
+  border-radius: 14px;
+  background: var(--grad);
+  color: #001018;
+  font-size: 17px;
+  font-weight: 800;
+  text-align: center;
+  cursor: pointer;
+}
+#btn-add:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* input desplegable (aparece dentro del panel inferior al dejar el globo) */
+#overlay-label { margin-top: 2px; }
+#overlay-label p {
+  font-size: 13px;
+  font-weight: 700;
+  margin-bottom: 8px;
+  color: var(--txt);
+}
+#overlay-label input {
+  width: 100%;
+  padding: 13px 14px;
+  border-radius: 11px;
+  border: 1px solid var(--line);
+  background: #0d1122;
+  color: var(--txt);
+  font-size: 16px;
+  font-family: inherit;
+  outline: none;
+}
+#overlay-label button {
+  width: 100%;
+  margin-top: 9px;
+  padding: 13px;
+  border: none;
+  border-radius: 11px;
+  background: var(--grad);
+  color: #001018;
+  font-weight: 800;
+  font-size: 15px;
+  cursor: pointer;
+}
+
+/* ============ pantalla de inicio ============ */
 #overlay-start {
   position: fixed; inset: 0; z-index: 30;
   display: flex; align-items: center; justify-content: center;
@@ -71,41 +160,6 @@ button { font-family: inherit; }
 }
 #enter-ar { margin-top: 8px; }
 .card.small { padding: 18px 16px; }
-#overlay {
-  position: fixed; inset: 0; z-index: 40;
-  pointer-events: none;
-}
-#overlay .card { pointer-events: auto; }
-#overlay-label {
-  position: absolute; inset: 0;
-  display: flex; align-items: center; justify-content: center;
-  background: rgba(5, 6, 15, 0.45);
-  padding: 20px;
-}
-#overlay-label p { margin-bottom: 6px; font-weight: 700; }
-#overlay-label input {
-  width: 100%;
-  margin: 10px 0 12px;
-  padding: 12px 14px;
-  border-radius: 10px;
-  border: 1px solid var(--line);
-  background: #0d1122;
-  color: var(--txt);
-  font-size: 16px;
-  font-family: inherit;
-  outline: none;
-}
-#overlay-label button {
-  width: 100%;
-  padding: 12px;
-  border: none;
-  border-radius: 12px;
-  background: var(--grad);
-  color: #001018;
-  font-weight: 700;
-  font-size: 15px;
-  cursor: pointer;
-}
 
 /* ARButton inyecta estilos inline; los anulamos. Cubre <button> y <a>. */
 #enter-ar button, #enter-ar a {
@@ -135,16 +189,17 @@ button { font-family: inherit; }
   opacity: 0.6 !important;
   cursor: default !important;
 }
+
 /* toast */
 .toast {
-  position: fixed; bottom: 24px; left: 50%; z-index: 60;
+  position: fixed; bottom: calc(50vh + 18px); left: 50%; z-index: 60;
   transform: translateX(-50%);
-  background: rgba(13, 17, 34, 0.92);
+  background: rgba(13, 17, 34, 0.94);
   border: 1px solid rgba(120, 140, 255, 0.22);
   border-radius: 10px;
   padding: 10px 16px;
   font-size: 14px;
   color: #e8ecff;
-  max-width: 90%;
+  max-width: 82%;
   pointer-events: none;
 }

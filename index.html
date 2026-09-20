@@ -8,7 +8,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <title>AR Balloons</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%8E%88%3C/text%3E%3C/svg%3E">
-  <link rel="stylesheet" href="style.css?v=14">
+  <link rel="stylesheet" href="style.css?vc=16">
   <script type="importmap">
     {
       "imports": {
@@ -23,10 +23,10 @@
 
   <div id="overlay-start">
     <div class="card">
-      <span class="badge"> NUEVA VERSION</span>
+      <span class="badge">NUEVA VERSION</span>
       <div class="logo"></div>
       <h1>AR Balloons</h1>
-      <p>Toca el objeto que quieras etiquetar (TV, cama, conector...) y escribe su nombre: queda fijo en ese lugar.</p>
+      <p>Pantalla dividida 50/50: arriba apunta con la cámara, abajo pulsa Agregar globo y toca la superficie donde quieras dejar tu etiqueta.</p>
       <div id="enter-ar"></div>
       <p id="count" class="status"></p>
       <div id="qr"></div>
@@ -35,18 +35,22 @@
   </div>
 
   <div id="overlay">
-  <div id="overlay-label" class="hidden">
-    <div class="card small">
-      <p>Nombre para este globo</p>
-      <input id="label-input" type="text" maxlength="22" autocomplete="off" enterkeyhint="done">
-      <button id="label-ok" type="button">Aceptar</button>
-    </div>
-  </div>
-</div>
+    <div id="ar-letterbox-l"></div>
+    <div id="ar-letterbox-r"></div>
 
-  <div id="toast" class="toast hidden"></div>
+    <div id="panel-bottom">
+      <button id="btn-add" type="button">Agregar globo</button>
+      <div id="overlay-label" class="hidden">
+        <p>Nombre para este globo</p>
+        <input id="label-input" type="text" maxlength="22" autocomplete="off" enterkeyhint="done">
+        <button id="label-ok" type="button">Aceptar</button>
+      </div>
+    </div>
+
+    <div id="toast" class="toast hidden"></div>
+  </div>
 
   <script src="https://unpkg.com/qrcode-generator@1.4.4/qrcode.js"></script>
-  <script type="module" src="app.js?v=14"></script>
+  <script type="module" src="app.js?v=16"></script>
 </body>
 </html>

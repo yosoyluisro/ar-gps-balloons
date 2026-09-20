@@ -27,7 +27,7 @@ const nameOk = document.getElementById('label-ok');
 const overlayRoot = document.getElementById('overlay');
 const qrEl = document.getElementById('qr');
 const versionEl = document.getElementById('version');
-const APP_VERSION = '0.5.0';
+const APP_VERSION = '0.6.0';
 
 function pagesUrl() {
   const h = location.hostname;
@@ -51,6 +51,7 @@ let placePending = false;
 let selectGuardUntil = 0;
 let labelWaiting = null;
 let pendingBalloonPos = null;
+let armReticle = false;
 
 /* ---------------- persistencia (los globos vuelven al entrar) ---------------- */
 
@@ -237,8 +238,15 @@ nameInput.addEventListener('keydown', (e) => {
 function onSelect() {
   if (Date.now() < selectGuardUntil) return;
   if (!nameOverlay.classList.contains('hidden')) return;
+  if (!armReticle) return;
   placePending = true;
 }
+
+document.getElementById('btn-add').addEventListener('click', () => {
+  if (!renderer.xr.isPresenting) return;
+  armReticle = true;
+  toast('Apunta a una superficie y toca la pantalla para dejar el globo');
+});
 
 async function setupHitTest() {
   try {
@@ -362,6 +370,7 @@ function onSessionStart() {
   buildDebug();
   balloons = 0;
   placePending = false;
+  armReticle = false;
   hitTestSource = null;
   transientSource = null;
   labelWaiting = null;
@@ -409,7 +418,7 @@ renderer.setAnimationLoop(() => {
     }
   }
 
-  if (surfacePos) {
+  if (armReticle && surfacePos) {
     reticle.position.copy(surfacePos);
     reticle.visible = true;
   } else {
@@ -422,6 +431,7 @@ renderer.setAnimationLoop(() => {
 
   if (placePending) {
     placePending = false;
+    armReticle = false;
     if (surfacePos) {
       placeLabel(surfacePos);
     } else {
