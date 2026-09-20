@@ -27,7 +27,7 @@ const nameOk = document.getElementById('label-ok');
 const overlayRoot = document.getElementById('overlay');
 const qrEl = document.getElementById('qr');
 const versionEl = document.getElementById('version');
-const APP_VERSION = '0.6.3';
+const APP_VERSION = '0.6.4';
 
 function pagesUrl() {
   const h = location.hostname;
@@ -117,6 +117,42 @@ function aimPoint(dist) {
   return camera.position.clone().add(dir.multiplyScalar(dist));
 }
 
+function aimAtSquare(dist) {
+  const camPos = new THREE.Vector3();
+  camera.getWorldPosition(camPos);
+  const dir = new THREE.Vector3();
+  camera.getWorldDirection(dir);
+  const vFov = THREE.MathUtils.degToRad(camera.fov);
+  const tanHalf = Math.tan(vFov / 2);
+  const pitch = Math.atan(0.5 * tanHalf);
+  const right = new THREE.Vector3().crossVectors(dir, new THREE.Vector3(0, 1, 0)).normalize();
+  const finalDir = dir.clone().applyAxisAngle(right, pitch).normalize();
+  return camPos.clone().add(finalDir.multiplyScalar(dist));
+}
+
+function squarePx() {
+  const w = window.innerWidth;
+  const h = window.innerHeight;
+  const sq = Math.min(0.88 * w, 0.44 * h);
+  const left = (w - sq) / 2;
+  const top = (h / 2 - sq) / 2;
+  return { left, top, sq };
+}
+
+function applySquareScissor() {
+  const { left, top, sq } = squarePx();
+  const y = window.innerHeight - top - sq;
+  renderer.setScissorTest(true);
+  renderer.setViewport(left, y, sq, sq);
+  renderer.setScissor(left, y, sq, sq);
+}
+
+function clearSquareScissor() {
+  renderer.setScissorTest(false);
+  renderer.setViewport(0, 0, window.innerWidth, window.innerHeight);
+  renderer.setScissor(0, 0, window.innerWidth, window.innerHeight);
+}
+
 function textSpriteTexture(text) {
   const c = document.createElement('canvas');
   const g = c.getContext('2d');
@@ -189,7 +225,7 @@ function placeLabel(surfacePos) {
 
 function placeFree() {
   const group = makeBallGroup();
-  group.position.copy(aimPoint(PLACE_DIST));
+  group.position.copy(aimAtSquare(PLACE_DIST));
   balloons++;
   const label = makeLabelSprite('Globo ' + balloons);
   label.position.y = FLOAT_ABOVE - LABEL_GAP;
@@ -252,7 +288,14 @@ async function setupHitTest() {
   try {
     const session = renderer.xr.getSession();
     const viewer = await session.requestReferenceSpace('viewer');
-    hitTestSource = await session.requestHitTestSource({ space: viewer });
+    const tanHalf = Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2);
+    const dy = 0.5 * tanHalf;
+    const len = Math.hypot(0, dy, 1);
+    const offsetRay = new XRRay(
+      new DOMPointReadOnly(0, 0, 0, 1),
+      new DOMPointReadOnly(0, dy / len, -1 / len, 0)
+    );
+    hitTestSource = await session.requestHitTestSource({ space: viewer, offsetRay });
     transientSource = await session.requestHitTestSourceForTransientInput({ profile: 'generic-touchscreen', space: viewer });
   } catch {
     hitTestSource = null;
@@ -278,7 +321,7 @@ function planeColor(plane) {
 
 function updateDebugRay(surfacePos) {
   const from = camera.position;
-  const to = surfacePos || aimPoint(PLACE_DIST);
+  const to = surfacePos || aimAtSquare(PLACE_DIST);
   const pos = debugRay.geometry.attributes.position;
   pos.setXYZ(0, from.x, from.y, from.z);
   pos.setXYZ(1, to.x, to.y, to.z);
@@ -384,6 +427,7 @@ function onSessionStart() {
 }
 
 function onSessionEnd() {
+  clearSquareScissor();
   startEl.classList.remove('hidden');
   countEl.textContent = balloons ? 'Dejaste ' + balloons + ' etiqueta(s) en el aire' : 'Toca la pantalla en RA para dejar etiquetas';
 }
@@ -439,6 +483,7 @@ renderer.setAnimationLoop(() => {
     }
   }
 
+  applySquareScissor();
   renderer.render(scene, camera);
 });
 
