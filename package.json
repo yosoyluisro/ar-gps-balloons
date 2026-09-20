@@ -1,9 +1,9 @@
 {
   "name": "ar-balloons",
-  "version": "0.4.2",
+  "version": "0.6.0",
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node test/geo.test.js"
+    "serve": "powershell -ExecutionPolicy Bypass -File servir.ps1"
   }
 }
