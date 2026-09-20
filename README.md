@@ -9,7 +9,10 @@ su nombre y queda fijo en ese lugar, flotando a poca altura.
   *hit-test* de superficie (se detectan con la camara del celular).
 - **Persistencia local**: los globos que guardas vuelven a aparecer al volver a entrar
   (se guardan en el almacenamiento del dispositivo, clave `argps.v1`).
-- **Version actual**: v0.8.1
+- **Dos tipos de globo**: **marcador** (fija un lugar con su nombre) y **way tracker**
+  (punto de paso). El camino se dibuja como una linea 3D que une los globos en el orden
+  en que los colocaste, y se reconecta solo si borras uno del medio.
+- **Version actual**: v0.9.0
 
 > La calidad del anclaje depende del *hit-test* del dispositivo (ARCore en Android, ARKit
 > en iPhone): necesita una superficie detectable e iluminacion decente.
@@ -42,11 +45,16 @@ Es un tunel HTTPS publico hacia tu PC; no hay que instalar nada en el telefono.
 1. Pulsa **Comenzar Realidad Aumentada** (se pide permiso de camara y se abre la sesion WebXR).
 2. La camara abre a **pantalla completa**; la **reticula** se muestra en el centro sobre la
    superficie detectada. Abajo hay un HUD flotante con los botones.
-3. Pulsa **Agregar globo** (o toca la pantalla) para dejar el globo en el punto de la reticula.
-4. Escribe el nombre en la tarjeta y pulsa **Aceptar**: el globo queda fijo con su etiqueta.
-5. Pulsa **Mis globos (N)** para ver la lista; usa **Eliminar** para borrar un globo
-   (se quita de la escena y de la persistencia).
-6. Al volver a entrar, los globos guardados aparecen de nuevo en su lugar.
+3. Elige el tipo en el HUD (el boton activo queda resaltado):
+   - **Agregar marcador**: fija un lugar. Despues de colocarlo escribe el nombre y pulsa **Aceptar**.
+   - **Agregar way tracker**: deja un punto de paso instantaneo (sin nombre) para trazar el
+     camino entre marcadores.
+4. Tambien puedes **tocar la pantalla** para colocar el tipo activo en el punto de la reticula.
+5. Cada globo que colocas se **conecta con el anterior**: el camino se dibuja como una linea
+   3D flotante que une los globos en orden de colocacion.
+6. Pulsa **Mis globos (N)** para ver la lista (marcadores con su nombre, ways como "Punto N");
+   usa **Eliminar** para borrar un globo. Si borras uno del medio, la ruta se reconecta.
+7. Al volver a entrar, los globos y el camino guardados aparecen de nuevo en su lugar.
 
 ## QR de acceso
 
@@ -57,7 +65,13 @@ La tarjeta de inicio muestra un QR con la URL de la app para abrirla rapido en e
 
 Estado estable en la rama `main`.
 
-- **v0.8.1** (`fef5054`) — checkpoint actual. Fullscreen + HUD sobre la camara, reticula
+- **v0.9.0** (checkpoint actual) — dos tipos de globo: **marcador** (fija un lugar con su
+  nombre) y **way tracker** (punto de paso sin nombre). El camino se dibuja como una linea
+  3D (fat lines) que une los globos en orden de colocacion y se reconecta al borrar. HUD
+  con dos botones + tipo activo resaltado (el toque coloca el tipo activo). Migracion de
+  globos antiguos a marcadores. Fix: el guard anti-select de v0.8.1 bloqueaba tambien el
+  click de los botones del HUD; ahora distingue boton vs select de WebXR.
+- **v0.8.1** (`fef5054`) — Fullscreen + HUD sobre la camara, reticula
   siempre visible, boton Agregar globo + input en tarjeta, lista Mis globos con eliminar,
   guard contra select doble al tocar el HUD, persistencia local, debug visual.
 - **v0.8.0** (`754655d`) — eliminar globos (lista Mis globos + persistencia).

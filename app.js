@@ -1,13 +1,20 @@
 import * as THREE from 'three';
 import { ARButton } from 'three/addons/webxr/ARButton.js';
+import { Line2 } from 'three/addons/lines/Line2.js';
+import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
+import { LineGeometry } from 'three/addons/lines/LineGeometry.js';
 
 const LS = 'argps.v1';
 
 const ORB = 'rgba(41,255,240,1)';
+const WAY_C = 'rgba(255,46,240,1)';
 const PLACE_DIST = 2.2;
 const FLOAT_ABOVE = 0.2;
 const LABEL_GAP = 0.32;
 const LABEL_H = 0.11;
+const BALL_SCALE = 0.35;
+const WAY_SCALE = 0.16;
+const LINE_COLOR = 0x29fff0;
 
 const renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('scene'), antialias: true, alpha: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
@@ -27,7 +34,7 @@ const nameOk = document.getElementById('label-ok');
 const overlayRoot = document.getElementById('overlay');
 const qrEl = document.getElementById('qr');
 const versionEl = document.getElementById('version');
-const APP_VERSION = '0.8.1';
+const APP_VERSION = '0.9.0';
 
 function pagesUrl() {
   const h = location.hostname;
@@ -48,6 +55,7 @@ let balloons = 0;
 let hitTestSource = null;
 let transientSource = null;
 let selectGuardUntil = 0;
+let activeTipo = 'marcador';
 let labelWaiting = null;
 let pendingBalloonPos = null;
 let pendingBalloonId = null;
@@ -64,7 +72,7 @@ let balloonsList = loadBalloons();
 function loadBalloons() {
   try {
     const v = JSON.parse(localStorage.getItem(LS));
-    if (v && Array.isArray(v)) return v.filter((b) => b && typeof b.name === 'string' && Number.isFinite(b.x) && Number.isFinite(b.z));
+    if (v && Array.isArray(v)) return v.filter((b) => b && Number.isFinite(b.x) && Number.isFinite(b.z)).map((b) => ({ tipo: 'marcador', ...b }));
   } catch { /* */ }
   return [];
 }
@@ -86,21 +94,24 @@ function renderBalloonList() {
   if (!balloonsList.length) {
     const empty = document.createElement('p');
     empty.className = 'list-empty';
-    empty.textContent = 'Aun no hay globos. Toca Agregar globo para dejar uno.';
+    empty.textContent = 'Aun no hay globos. Toca Agregar marcador o way tracker.';
     listPanel.appendChild(empty);
     return;
   }
-  balloonsList.forEach((b) => {
+  balloonsList.forEach((b, i) => {
     const row = document.createElement('div');
     row.className = 'list-row';
+    const dot = document.createElement('span');
+    dot.className = 'list-dot ' + (b.tipo === 'way' ? 'way' : 'marker');
     const name = document.createElement('span');
     name.className = 'list-name';
-    name.textContent = b.name || 'Globo';
+    name.textContent = b.tipo === 'way' ? 'Punto ' + (i + 1) : (b.name || 'Marcador');
     const del = document.createElement('button');
     del.type = 'button';
     del.className = 'list-del';
     del.textContent = 'Eliminar';
     del.addEventListener('click', () => deleteBalloon(b.id));
+    row.appendChild(dot);
     row.appendChild(name);
     row.appendChild(del);
     listPanel.appendChild(row);
@@ -127,6 +138,7 @@ function deleteBalloon(id) {
   balloons = Math.max(0, balloonsList.length);
   saveBalloons();
   renderBalloonList();
+  rebuildPath();
   toast('Globo eliminado');
 }
 
@@ -138,23 +150,27 @@ document.getElementById('btn-list').addEventListener('click', () => {
 function restoreBalloons() {
   for (const b of balloonsList) {
     if (!b.id) b.id = newBalloonId();
-    const group = makeBallGroup();
+    if (!b.tipo) b.tipo = 'marcador';
+    const group = makeBallGroup(b.tipo);
     group.position.set(b.x, b.y ?? FLOAT_ABOVE, b.z);
     balloons++;
-    const label = makeLabelSprite(b.name || 'Globo ' + balloons);
-    label.position.y = FLOAT_ABOVE - LABEL_GAP;
-    group.add(label);
+    if (b.tipo !== 'way') {
+      const label = makeLabelSprite(b.name || 'Globo ' + balloons);
+      label.position.y = FLOAT_ABOVE - LABEL_GAP;
+      group.add(label);
+    }
     balloonGroups.set(b.id, group);
   }
+  rebuildPath();
 }
 
-function orbTexture() {
+function orbTexture(color) {
   const c = document.createElement('canvas');
   c.width = c.height = 128;
   const g = c.getContext('2d');
   const grad = g.createRadialGradient(48, 44, 6, 64, 64, 62);
   grad.addColorStop(0, 'rgba(255,255,255,1)');
-  grad.addColorStop(0.35, ORB);
+  grad.addColorStop(0.35, color || ORB);
   grad.addColorStop(1, 'rgba(41,255,240,0)');
   g.fillStyle = grad;
   g.fillRect(0, 0, 128, 128);
@@ -173,7 +189,8 @@ function ringTexture() {
   return new THREE.CanvasTexture(c);
 }
 
-const ballTex = orbTexture();
+const ballTex = orbTexture(ORB);
+const wayTex = orbTexture(WAY_C);
 
 function aimPoint(dist) {
   const dir = new THREE.Vector3();
@@ -219,6 +236,30 @@ function makeLabelSprite(text) {
   return spr;
 }
 
+/* ---------------- camino: linea 3D que une los globos en orden ---------------- */
+
+const pathMat = new LineMaterial({ color: LINE_COLOR, transparent: true, opacity: 0.75, linewidth: 4, depthTest: true, depthWrite: false });
+pathMat.resolution.set(window.innerWidth, window.innerHeight);
+let pathLine = null;
+
+function rebuildPath() {
+  if (pathLine) {
+    scene.remove(pathLine);
+    pathLine.geometry.dispose();
+    pathLine = null;
+  }
+  if (balloonsList.length < 2) return;
+  const pts = [];
+  for (const b of balloonsList) {
+    pts.push(b.x, (b.y ?? FLOAT_ABOVE) + FLOAT_ABOVE, b.z);
+  }
+  const geo = new LineGeometry();
+  geo.setPositions(pts);
+  pathLine = new Line2(geo, pathMat);
+  pathLine.frustumCulled = false;
+  scene.add(pathLine);
+}
+
 function applyLabel(spr, text) {
   const tex = textSpriteTexture(text);
   spr.material.map = tex;
@@ -226,43 +267,36 @@ function applyLabel(spr, text) {
   spr.scale.x = LABEL_H * (tex.image.width / tex.image.height);
 }
 
-function makeBallGroup() {
+function makeBallGroup(tipo) {
   const group = new THREE.Group();
-  const ball = new THREE.Sprite(new THREE.SpriteMaterial({ map: ballTex, transparent: true, depthTest: true, depthWrite: false }));
-  ball.scale.set(0.35, 0.35, 1);
+  const isWay = tipo === 'way';
+  const ball = new THREE.Sprite(new THREE.SpriteMaterial({ map: isWay ? wayTex : ballTex, transparent: true, depthTest: true, depthWrite: false }));
+  ball.scale.set(isWay ? WAY_SCALE : BALL_SCALE, isWay ? WAY_SCALE : BALL_SCALE, 1);
   ball.position.y = FLOAT_ABOVE;
   group.add(ball);
   scene.add(group);
   return group;
 }
 
-function placeLabel(surfacePos) {
-  const group = makeBallGroup();
-  group.position.copy(surfacePos);
+function commitBalloon(tipo, pos) {
+  const group = makeBallGroup(tipo);
+  group.position.copy(pos);
   balloons++;
-  pendingBalloonId = newBalloonId();
-  balloonGroups.set(pendingBalloonId, group);
+  const id = newBalloonId();
+  balloonGroups.set(id, group);
+  if (tipo === 'way') {
+    balloonsList.push({ id, tipo, x: pos.x, y: pos.y, z: pos.z });
+    saveBalloons();
+    renderBalloonList();
+    rebuildPath();
+    toast('Punto agregado a la ruta');
+    return;
+  }
   const label = makeLabelSprite('Globo ' + balloons);
   label.position.y = FLOAT_ABOVE - LABEL_GAP;
   group.add(label);
   labelWaiting = label;
-  pendingBalloonPos = group.position.clone();
-  nameOverlay.classList.remove('hidden');
-  nameInput.value = 'Globo ' + balloons;
-  nameInput.focus();
-  nameInput.select();
-}
-
-function placeFree() {
-  const group = makeBallGroup();
-  group.position.copy(aimPoint(PLACE_DIST));
-  balloons++;
-  pendingBalloonId = newBalloonId();
-  balloonGroups.set(pendingBalloonId, group);
-  const label = makeLabelSprite('Globo ' + balloons);
-  label.position.y = FLOAT_ABOVE - LABEL_GAP;
-  group.add(label);
-  labelWaiting = label;
+  pendingBalloonId = id;
   pendingBalloonPos = group.position.clone();
   nameOverlay.classList.remove('hidden');
   nameInput.value = 'Globo ' + balloons;
@@ -284,6 +318,7 @@ nameOk.addEventListener('click', () => {
     if (pendingBalloonPos) {
       balloonsList.push({
         id: pendingBalloonId || newBalloonId(),
+        tipo: 'marcador',
         name,
         x: pendingBalloonPos.x,
         y: pendingBalloonPos.y,
@@ -293,6 +328,7 @@ nameOk.addEventListener('click', () => {
       pendingBalloonId = null;
       saveBalloons();
       renderBalloonList();
+      rebuildPath();
     }
     labelWaiting = null;
   }
@@ -315,25 +351,35 @@ document.addEventListener('pointerdown', (e) => {
   }
 }, true);
 
-function placeBalloon() {
+function placeBalloon(fromHudBtn) {
   if (!renderer.xr.isPresenting) return;
   if (Date.now() < selectGuardUntil) return;
-  if (Date.now() - lastUiTap < 600) return;
+  if (!fromHudBtn && Date.now() - lastUiTap < 600) return;
   if (!nameOverlay.classList.contains('hidden')) return;
-  if (lastSurfacePos) {
-    placeLabel(lastSurfacePos);
-  } else {
-    placeFree();
-  }
+  const pos = lastSurfacePos ? lastSurfacePos : aimPoint(PLACE_DIST);
+  commitBalloon(activeTipo, pos);
 }
 
 function onSelect() {
-  placeBalloon();
+  placeBalloon(false);
+}
+
+function setActiveTipo(t) {
+  activeTipo = t;
+  document.getElementById('btn-add').classList.toggle('active', t === 'marcador');
+  document.getElementById('btn-way').classList.toggle('active', t === 'way');
 }
 
 document.getElementById('btn-add').addEventListener('click', () => {
-  placeBalloon();
+  setActiveTipo('marcador');
+  placeBalloon(true);
 });
+
+document.getElementById('btn-way').addEventListener('click', () => {
+  setActiveTipo('way');
+  placeBalloon(true);
+});
+setActiveTipo('marcador');
 
 async function setupHitTest() {
   try {
@@ -527,6 +573,7 @@ window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
+  pathMat.resolution.set(window.innerWidth, window.innerHeight);
 });
 
 const enterBtn = ARButton.createButton(renderer, { optionalFeatures: ['hit-test', 'plane-detection', 'dom-overlay'], domOverlay: { root: overlayRoot } });
