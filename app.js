@@ -27,7 +27,7 @@ const nameOk = document.getElementById('label-ok');
 const overlayRoot = document.getElementById('overlay');
 const qrEl = document.getElementById('qr');
 const versionEl = document.getElementById('version');
-const APP_VERSION = '0.8.0';
+const APP_VERSION = '0.8.1';
 
 function pagesUrl() {
   const h = location.hostname;
@@ -307,10 +307,18 @@ nameInput.addEventListener('keydown', (e) => {
 });
 
 let lastSurfacePos = null;
+let lastUiTap = 0;
+
+document.addEventListener('pointerdown', (e) => {
+  if (e.target && e.target.closest && e.target.closest('#overlay')) {
+    lastUiTap = Date.now();
+  }
+}, true);
 
 function placeBalloon() {
   if (!renderer.xr.isPresenting) return;
   if (Date.now() < selectGuardUntil) return;
+  if (Date.now() - lastUiTap < 600) return;
   if (!nameOverlay.classList.contains('hidden')) return;
   if (lastSurfacePos) {
     placeLabel(lastSurfacePos);
