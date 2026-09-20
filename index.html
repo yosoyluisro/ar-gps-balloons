@@ -8,7 +8,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <title>AR Balloons</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%8E%88%3C/text%3E%3C/svg%3E">
-  <link rel="stylesheet" href="style.css?vc=21">
+  <link rel="stylesheet" href="style.css?vc=22">
   <script type="importmap">
     {
       "imports": {
@@ -37,6 +37,8 @@
   <div id="overlay">
     <div id="hud-bottom">
       <button id="btn-add" type="button">Agregar globo</button>
+      <button id="btn-list" type="button">Mis globos (<span id="list-count">0</span>)</button>
+      <div id="balloon-list" class="hidden"></div>
       <div id="overlay-label" class="hidden">
         <p>Nombre para este globo</p>
         <input id="label-input" type="text" maxlength="22" autocomplete="off" enterkeyhint="done">
@@ -48,6 +50,6 @@
   </div>
 
   <script src="https://unpkg.com/qrcode-generator@1.4.4/qrcode.js"></script>
-  <script type="module" src="app.js?v=21"></script>
+  <script type="module" src="app.js?v=22"></script>
 </body>
 </html>

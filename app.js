@@ -27,7 +27,7 @@ const nameOk = document.getElementById('label-ok');
 const overlayRoot = document.getElementById('overlay');
 const qrEl = document.getElementById('qr');
 const versionEl = document.getElementById('version');
-const APP_VERSION = '0.7.0';
+const APP_VERSION = '0.8.0';
 
 function pagesUrl() {
   const h = location.hostname;
@@ -50,6 +50,12 @@ let transientSource = null;
 let selectGuardUntil = 0;
 let labelWaiting = null;
 let pendingBalloonPos = null;
+let pendingBalloonId = null;
+const balloonGroups = new Map();
+
+function newBalloonId() {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+}
 
 /* ---------------- persistencia (los globos vuelven al entrar) ---------------- */
 
@@ -71,14 +77,74 @@ function saveBalloons() {
   }
 }
 
+const listPanel = document.getElementById('balloon-list');
+const listCount = document.getElementById('list-count');
+
+function renderBalloonList() {
+  listCount.textContent = String(balloonsList.length);
+  listPanel.innerHTML = '';
+  if (!balloonsList.length) {
+    const empty = document.createElement('p');
+    empty.className = 'list-empty';
+    empty.textContent = 'Aun no hay globos. Toca Agregar globo para dejar uno.';
+    listPanel.appendChild(empty);
+    return;
+  }
+  balloonsList.forEach((b) => {
+    const row = document.createElement('div');
+    row.className = 'list-row';
+    const name = document.createElement('span');
+    name.className = 'list-name';
+    name.textContent = b.name || 'Globo';
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'list-del';
+    del.textContent = 'Eliminar';
+    del.addEventListener('click', () => deleteBalloon(b.id));
+    row.appendChild(name);
+    row.appendChild(del);
+    listPanel.appendChild(row);
+  });
+}
+
+function deleteBalloon(id) {
+  const idx = balloonsList.findIndex((b) => b.id === id);
+  if (idx === -1) return;
+  balloonsList.splice(idx, 1);
+  const group = balloonGroups.get(id);
+  if (group) {
+    scene.remove(group);
+    group.children.forEach((c) => {
+      if (c.material && c.material.map) c.material.map.dispose();
+      if (c.material) c.material.dispose();
+    });
+    balloonGroups.delete(id);
+  }
+  if (pendingBalloonId === id) {
+    pendingBalloonId = null;
+    pendingBalloonPos = null;
+  }
+  balloons = Math.max(0, balloonsList.length);
+  saveBalloons();
+  renderBalloonList();
+  toast('Globo eliminado');
+}
+
+document.getElementById('btn-list').addEventListener('click', () => {
+  listPanel.classList.toggle('hidden');
+  renderBalloonList();
+});
+
 function restoreBalloons() {
   for (const b of balloonsList) {
+    if (!b.id) b.id = newBalloonId();
     const group = makeBallGroup();
     group.position.set(b.x, b.y ?? FLOAT_ABOVE, b.z);
     balloons++;
     const label = makeLabelSprite(b.name || 'Globo ' + balloons);
     label.position.y = FLOAT_ABOVE - LABEL_GAP;
     group.add(label);
+    balloonGroups.set(b.id, group);
   }
 }
 
@@ -174,6 +240,8 @@ function placeLabel(surfacePos) {
   const group = makeBallGroup();
   group.position.copy(surfacePos);
   balloons++;
+  pendingBalloonId = newBalloonId();
+  balloonGroups.set(pendingBalloonId, group);
   const label = makeLabelSprite('Globo ' + balloons);
   label.position.y = FLOAT_ABOVE - LABEL_GAP;
   group.add(label);
@@ -189,6 +257,8 @@ function placeFree() {
   const group = makeBallGroup();
   group.position.copy(aimPoint(PLACE_DIST));
   balloons++;
+  pendingBalloonId = newBalloonId();
+  balloonGroups.set(pendingBalloonId, group);
   const label = makeLabelSprite('Globo ' + balloons);
   label.position.y = FLOAT_ABOVE - LABEL_GAP;
   group.add(label);
@@ -213,13 +283,16 @@ nameOk.addEventListener('click', () => {
     applyLabel(labelWaiting, name);
     if (pendingBalloonPos) {
       balloonsList.push({
+        id: pendingBalloonId || newBalloonId(),
         name,
         x: pendingBalloonPos.x,
         y: pendingBalloonPos.y,
         z: pendingBalloonPos.z
       });
       pendingBalloonPos = null;
+      pendingBalloonId = null;
       saveBalloons();
+      renderBalloonList();
     }
     labelWaiting = null;
   }
@@ -375,6 +448,7 @@ function onSessionStart() {
   debugPlanes.clear();
   buildDebug();
   balloons = 0;
+  balloonGroups.clear();
   lastSurfacePos = null;
   hitTestSource = null;
   transientSource = null;
@@ -384,6 +458,7 @@ function onSessionStart() {
   hideNamePrompt();
   countEl.textContent = '';
   startEl.classList.add('hidden');
+  renderBalloonList();
   setupHitTest();
   renderer.xr.getSession().addEventListener('select', onSelect);
 }
@@ -391,6 +466,7 @@ function onSessionStart() {
 function onSessionEnd() {
   startEl.classList.remove('hidden');
   countEl.textContent = balloons ? 'Dejaste ' + balloons + ' etiqueta(s) en el aire' : 'Toca la pantalla en RA para dejar etiquetas';
+  renderBalloonList();
 }
 
 renderer.xr.addEventListener('sessionstart', onSessionStart);
