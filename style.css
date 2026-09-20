@@ -29,37 +29,52 @@ html, body {
 button { font-family: inherit; }
 
 /* ============ SPLIT 50/50 ============ */
-/* La cámara (canvas) llena todo por requisito de WebXR; visualmente se ve
-   en la MITAD SUPERIOR como un cuadrado (letterbox) y la mitad inferior
-   queda cubierta por el panel de control opaco. */
+/* La camara (canvas) llena toda la pantalla por requisito de WebXR.
+   Para que se vea como un CUADRADO en la mitad superior, tapamos todo lo
+   que no es ese cuadrado con mascaras opacas (misma clase que el fondo). */
 
 #overlay {
   position: fixed; inset: 0; z-index: 40;
   pointer-events: none;
 }
-#overlay > * { pointer-events: auto; }
 
-/* letterbox: enmarca la cámara como cuadrado en la mitad superior */
+/* Cuadrado de la camara: lado = min(50vh, 100vw), centrado en la mitad superior */
+#ar-letterbox-t, #ar-letterbox-b,
 #ar-letterbox-l, #ar-letterbox-r {
   position: fixed;
-  top: 0; bottom: 50vh;
-  width: calc((100vw - min(50vh, 100vw)) / 2);
   background: var(--bg);
   z-index: 5;
   pointer-events: none;
 }
-#ar-letterbox-l { left: 0; }
-#ar-letterbox-r { right: 0; }
+/* tapar arriba del cuadrado (dentro de la mitad superior) */
+#ar-letterbox-t {
+  top: 0; left: 0; right: 0;
+  height: calc((50vh - min(50vh, 100vw)) / 2);
+}
+/* tapar abajo del cuadrado (justo encima del panel) */
+#ar-letterbox-b {
+  bottom: 50vh; left: 0; right: 0;
+  height: calc((50vh - min(50vh, 100vw)) / 2);
+}
+/* tapar laterales del cuadrado */
+#ar-letterbox-l {
+  top: 0; bottom: 50vh; left: 0;
+  width: calc((100vw - min(50vh, 100vw)) / 2);
+}
+#ar-letterbox-r {
+  top: 0; bottom: 50vh; right: 0;
+  width: calc((100vw - min(50vh, 100vw)) / 2);
+}
 
-/* panel inferior: ocupa la mitad de abajo y tapa la cámara ahí */
+/* panel inferior: ocupa la mitad de abajo, OPACO (no deja ver la camara) */
 #panel-bottom {
   position: fixed;
   left: 0; right: 0; bottom: 0;
   height: 50vh;
   z-index: 20;
-  background: var(--panel);
+  background: var(--bg);
   border-top: 1px solid var(--line);
-  backdrop-filter: blur(12px);
+  pointer-events: auto;
   display: flex;
   flex-direction: column;
   justify-content: flex-end;

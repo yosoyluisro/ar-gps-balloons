@@ -27,7 +27,7 @@ const nameOk = document.getElementById('label-ok');
 const overlayRoot = document.getElementById('overlay');
 const qrEl = document.getElementById('qr');
 const versionEl = document.getElementById('version');
-const APP_VERSION = '0.6.1';
+const APP_VERSION = '0.6.2';
 
 function pagesUrl() {
   const h = location.hostname;
