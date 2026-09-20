@@ -1,13 +1,12 @@
 :root {
   --bg: #05060f;
-  --panel: rgba(9, 12, 27, 0.94);
+  --panel: rgba(9, 12, 27, 0.9);
   --line: rgba(120, 140, 255, 0.22);
   --txt: #e8ecff;
   --dim: #9aa3c7;
   --accent: #29fff0;
   --accent2: #ff2ef0;
   --grad: linear-gradient(90deg, var(--accent), var(--accent2));
-  --sq: min(88vw, 44vh);
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -29,59 +28,20 @@ html, body {
 
 button { font-family: inherit; }
 
-/* ============ SPLIT 50/50 ============ */
-/* La camara (canvas) llena toda la pantalla por requisito de WebXR.
-   Para que se vea como un CUADRADO en la mitad superior, tapamos todo lo
-   que no es ese cuadrado con mascaras opacas (misma clase que el fondo). */
-
+/* ============ HUD sobre la camara (fullscreen) ============ */
 #overlay {
   position: fixed; inset: 0; z-index: 40;
   pointer-events: none;
 }
-
-/* Cuadrado de la camara: lado = min(88vw, 44vh), centrado en la mitad superior */
-#ar-letterbox-t, #ar-letterbox-b,
-#ar-letterbox-l, #ar-letterbox-r {
-  position: fixed;
-  background: var(--bg);
-  z-index: 5;
-  pointer-events: none;
-}
-/* tapar arriba del cuadrado (dentro de la mitad superior) */
-#ar-letterbox-t {
-  top: 0; left: 0; right: 0;
-  height: calc((50vh - var(--sq)) / 2);
-}
-/* tapar abajo del cuadrado (justo encima del panel) */
-#ar-letterbox-b {
-  bottom: 50vh; left: 0; right: 0;
-  height: calc((50vh - var(--sq)) / 2);
-}
-/* tapar laterales del cuadrado */
-#ar-letterbox-l {
-  top: 0; bottom: 50vh; left: 0;
-  width: calc((100vw - var(--sq)) / 2);
-}
-#ar-letterbox-r {
-  top: 0; bottom: 50vh; right: 0;
-  width: calc((100vw - var(--sq)) / 2);
-}
-
-/* panel inferior: ocupa la mitad de abajo, OPACO (no deja ver la camara) */
-#panel-bottom {
+#hud-bottom {
   position: fixed;
   left: 0; right: 0; bottom: 0;
-  height: 50vh;
   z-index: 20;
-  background: var(--bg);
-  border-top: 1px solid var(--line);
   pointer-events: auto;
   display: flex;
   flex-direction: column;
-  justify-content: center;
-  align-items: stretch;
   gap: 10px;
-  padding: 16px 16px calc(16px + env(safe-area-inset-bottom));
+  padding: 14px 16px calc(14px + env(safe-area-inset-bottom));
 }
 
 #btn-add {
@@ -95,14 +55,21 @@ button { font-family: inherit; }
   font-weight: 800;
   text-align: center;
   cursor: pointer;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
 }
 #btn-add:disabled {
-  opacity: 0.45;
+  opacity: 0.5;
   cursor: default;
 }
 
-/* input desplegable (aparece dentro del panel inferior al dejar el globo) */
-#overlay-label { margin-top: 2px; }
+/* input desplegable (tarjeta sobre la camara) */
+#overlay-label {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 14px;
+  backdrop-filter: blur(8px);
+}
 #overlay-label p {
   font-size: 13px;
   font-weight: 700;
@@ -208,7 +175,7 @@ button { font-family: inherit; }
 
 /* toast */
 .toast {
-  position: fixed; bottom: calc(50vh + 18px); left: 50%; z-index: 60;
+  position: fixed; bottom: 96px; left: 50%; z-index: 60;
   transform: translateX(-50%);
   background: rgba(13, 17, 34, 0.94);
   border: 1px solid rgba(120, 140, 255, 0.22);
