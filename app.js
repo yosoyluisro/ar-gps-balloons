@@ -1,5 +1,4 @@
 import * as THREE from 'three';
-import { ARButton } from 'three/addons/webxr/ARButton.js';
 import { Line2 } from 'three/addons/lines/Line2.js';
 import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
 import { LineGeometry } from 'three/addons/lines/LineGeometry.js';
@@ -34,7 +33,7 @@ const nameOk = document.getElementById('label-ok');
 const overlayRoot = document.getElementById('overlay');
 const qrEl = document.getElementById('qr');
 const versionEl = document.getElementById('version');
-const APP_VERSION = '0.10.0';
+const APP_VERSION = '0.11.0';
 
 function pagesUrl() {
   const h = location.hostname;
@@ -195,9 +194,11 @@ function markerRow(b) {
   del.addEventListener('click', () => deleteBalloon(b.id));
   row.appendChild(dot);
   row.appendChild(name);
-  row.appendChild(btnA);
-  row.appendChild(btnB);
-  row.appendChild(del);
+  if (modo === 'registrar') {
+    row.appendChild(btnA);
+    row.appendChild(btnB);
+    row.appendChild(del);
+  }
   return row;
 }
 
@@ -216,7 +217,7 @@ function wayRow(b) {
   del.addEventListener('click', () => deleteBalloon(b.id));
   row.appendChild(dot);
   row.appendChild(name);
-  row.appendChild(del);
+  if (modo === 'registrar') row.appendChild(del);
   return row;
 }
 
@@ -233,7 +234,7 @@ function renderBalloonList() {
   }
   const mA = selA ? balloonById(selA) : null;
   const mB = selB ? balloonById(selB) : null;
-  if (mA && mB && selA !== selB && mA.tipo !== 'way' && mB.tipo !== 'way') {
+  if (modo === 'registrar' && mA && mB && selA !== selB && mA.tipo !== 'way' && mB.tipo !== 'way') {
     const mk = document.createElement('button');
     mk.type = 'button';
     mk.id = 'btn-create-path';
@@ -271,8 +272,10 @@ function renderBalloonList() {
       del.addEventListener('click', () => deletePath(p.id));
       row.appendChild(dot);
       row.appendChild(name);
-      row.appendChild(ed);
-      row.appendChild(del);
+      if (modo === 'registrar') {
+        row.appendChild(ed);
+        row.appendChild(del);
+      }
       listPanel.appendChild(row);
       for (const id of p.seq) {
         const b = balloonById(id);
@@ -302,6 +305,7 @@ function removeBalloonVisual(id) {
 }
 
 function createPath(aId, bId) {
+  if (modo !== 'registrar') return;
   const a = balloonById(aId);
   const b = balloonById(bId);
   if (!a || !b || aId === bId || a.tipo === 'way' || b.tipo === 'way') {
@@ -320,6 +324,7 @@ function createPath(aId, bId) {
 }
 
 function deletePath(pathId) {
+  if (modo !== 'registrar') return;
   const pi = pathsList.findIndex((p) => p.id === pathId);
   if (pi === -1) return;
   const p = pathsList[pi];
@@ -347,6 +352,7 @@ function deletePath(pathId) {
 }
 
 function setActivePath(id) {
+  if (modo !== 'registrar') return;
   const p = id ? pathById(id) : null;
   activePathId = p ? p.id : null;
   saveStore();
@@ -370,6 +376,7 @@ function renderPathChip() {
 }
 
 function deleteBalloon(id) {
+  if (modo !== 'registrar') return;
   const idx = balloonsList.findIndex((b) => b.id === id);
   if (idx === -1) return;
   balloonsList.splice(idx, 1);
@@ -638,6 +645,7 @@ document.addEventListener('pointerdown', (e) => {
 }, true);
 
 function placeBalloon(fromHudBtn) {
+  if (modo !== 'registrar') return;
   if (!renderer.xr.isPresenting) return;
   if (Date.now() < selectGuardUntil) return;
   if (!fromHudBtn && Date.now() - lastUiTap < 600) return;
@@ -790,7 +798,7 @@ function onSessionStart() {
     entry.line.material.dispose();
   });
   debugPlanes.clear();
-  buildDebug();
+  if (modo === 'registrar') buildDebug();
   balloons = 0;
   balloonGroups.clear();
   lastSurfacePos = null;
@@ -848,16 +856,18 @@ renderer.setAnimationLoop(() => {
 
   lastSurfacePos = surfacePos;
 
-  if (surfacePos) {
+  if (surfacePos && modo === 'registrar') {
     reticle.position.copy(surfacePos);
     reticle.visible = true;
   } else {
     reticle.visible = false;
   }
 
-  updateDebugRay(surfacePos);
-  updateDebugPlanes(frame, refSpace);
-  debugCam.position.copy(camera.position);
+  if (modo === 'registrar') {
+    updateDebugRay(surfacePos);
+    updateDebugPlanes(frame, refSpace);
+    debugCam.position.copy(camera.position);
+  }
 
   renderer.render(scene, camera);
 });
@@ -869,23 +879,42 @@ window.addEventListener('resize', () => {
   pathMat.resolution.set(window.innerWidth, window.innerHeight);
 });
 
-const enterBtn = ARButton.createButton(renderer, { optionalFeatures: ['hit-test', 'plane-detection', 'dom-overlay'], domOverlay: { root: overlayRoot } });
-document.getElementById('enter-ar').appendChild(enterBtn);
+/* ---------------- modos: registrar (edicion) vs ver mapa (solo lectura) ---------------- */
 
-function neutralButton(ok, label) {
-  enterBtn.removeAttribute('style');
-  enterBtn.onmouseenter = null;
-  enterBtn.onmouseleave = null;
-  enterBtn.textContent = label;
-  enterBtn.classList.toggle('ar-off', !ok);
+let modo = 'registrar';
+const btnModeReg = document.getElementById('btn-mode-reg');
+const btnModeVer = document.getElementById('btn-mode-ver');
+const modeStatus = document.getElementById('mode-status');
+
+const SESSION_OPTS = { optionalFeatures: ['hit-test', 'plane-detection', 'dom-overlay'], domOverlay: { root: overlayRoot } };
+
+async function startAR(m) {
+  modo = m;
+  document.body.classList.toggle('modo-ver', m === 'ver');
+  try {
+    const session = await navigator.xr.requestSession('immersive-ar', SESSION_OPTS);
+    await renderer.xr.setSession(session);
+  } catch {
+    document.body.classList.remove('modo-ver');
+    toast('No se pudo abrir la sesion AR');
+  }
+}
+
+btnModeReg.addEventListener('click', () => startAR('registrar'));
+btnModeVer.addEventListener('click', () => startAR('ver'));
+
+function setModeButtons(ok) {
+  btnModeReg.disabled = !ok;
+  btnModeVer.disabled = !ok;
+  if (modeStatus) modeStatus.textContent = ok ? '' : 'RA no disponible en este dispositivo o navegador';
 }
 
 if ('xr' in navigator && navigator.xr) {
   navigator.xr.isSessionSupported('immersive-ar').then((ok) => {
-    neutralButton(ok, ok ? '  Comenzar Realidad Aumentada' : 'RA no disponible en este dispositivo');
-  }).catch(() => {});
+    setModeButtons(ok);
+  }).catch(() => setModeButtons(false));
 } else {
-  neutralButton(false, 'Este navegador no soporta RA');
+  setModeButtons(false);
 }
 
 let toastTimer = null;

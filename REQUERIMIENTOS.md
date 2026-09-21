@@ -1,6 +1,6 @@
 # Hoja de Requerimientos - AR Balloons
 
-**Estado:** v0.10.0 (estado actual de la app)
+**Estado:** v0.11.0 (estado actual de la app)
 **Costo:** $0 (sin API keys, sin servicios de pago, sin build)
 
 ---
@@ -23,7 +23,7 @@ marcadores son globales y pueden ser extremo de varios caminos.
 
 - **Caso de uso principal:** marcar lugares y trazar rutas entre ellos (p. ej. camino de
   la sala a la cocina), sin fotos, solo con la camara.
-- **Alcance v0.10.0:** lo que la app hace hoy (2 tipos de globo + caminos A->B + persistencia local).
+- **Alcance v0.11.0:** lo que la app hace hoy (2 tipos de globo + caminos A->B + modos Registrar/Ver + persistencia local).
 - **Uso:** un solo dispositivo.
 
 ### Fuera de alcance
@@ -37,7 +37,9 @@ marcadores son globales y pueden ser extremo de varios caminos.
 
 ## 2. Requerimientos funcionales
 
-- **RF1 - Entrada a RA:** boton que pide permiso de camara y abre una sesion WebXR inmersiva.
+- **RF1 - Entrada a RA:** dos botones que piden permiso de camara y abren una sesion
+  WebXR inmersiva: **Registrar** (edicion completa) y **Ver mapa** (solo lectura, sin
+  debug ni controles de edicion, lista sin acciones). El modo solo se elige al inicio.
 - **RF2 - HUD sobre la camara:** en la sesion, botones flotantes sobre la camara
   (**Agregar marcador**, **Agregar way tracker**, **Mis globos**) en fullscreen, mas el
   chip del camino en edicion ("Camino: A -> B" + **Salir**).
@@ -74,8 +76,8 @@ marcadores son globales y pueden ser extremo de varios caminos.
 
 - **RNF1 - Rendimiento:** 60 fps en celulares medianos; texturas de globo y etiqueta
   generadas en canvas (sin assets externos).
-- **RNF2 - Sin dependencias de backend:** Three.js, ARButton y lineas del camino
-  (Line2/LineMaterial) se cargan por CDN.
+- **RNF2 - Sin dependencias de backend:** Three.js y lineas del camino
+  (Line2/LineMaterial) se cargan por CDN; la sesion WebXR se pide directo sin librerias.
 - **RNF3 - Compatibilidad:** Android (Chrome + ARCore) e iOS (Safari 17+ / ARKit); el HUD
   sobre la camara usa `dom-overlay` (Chromium).
 - **RNF4 - Seguridad:** solo HTTPS para WebXR; sin almacenar datos fuera del dispositivo.

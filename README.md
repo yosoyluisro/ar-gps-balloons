@@ -12,7 +12,7 @@ su nombre y queda fijo en ese lugar, flotando a poca altura.
 - **Dos tipos de globo**: **marcador** (fija un lugar con su nombre) y **way tracker**
   (punto de paso). Con dos marcadores A y B creas un **camino** ("Sala -> Cocina") y lo
   trazas con way trackers; cada camino dibuja su propia linea 3D.
-- **Version actual**: v0.10.0
+- **Version actual**: v0.11.0
 
 > La calidad del anclaje depende del *hit-test* del dispositivo (ARCore en Android, ARKit
 > en iPhone): necesita una superficie detectable e iluminacion decente.
@@ -42,7 +42,9 @@ Es un tunel HTTPS publico hacia tu PC; no hay que instalar nada en el telefono.
 
 ## Como usar
 
-1. Pulsa **Comenzar Realidad Aumentada** (se pide permiso de camara y se abre la sesion WebXR).
+1. Elige el modo en la tarjeta inicial (se pide permiso de camara y se abre la sesion WebXR):
+   - **Registrar**: coloca marcadores, crea caminos y edita (pasos 2-6).
+   - **Ver mapa**: solo mira globos y caminos, sin poder modificar nada (lista de solo lectura).
 2. La camara abre a **pantalla completa**; la **reticula** se muestra en el centro sobre la
    superficie detectada. Abajo hay un HUD flotante con los botones.
 3. Elige el tipo en el HUD (el boton activo queda resaltado):
@@ -67,7 +69,10 @@ La tarjeta de inicio muestra un QR con la URL de la app para abrirla rapido en e
 
 Estado estable en la rama `main`.
 
-- **v0.10.0** (checkpoint actual) — caminos A->B: eliges dos marcadores en Mis globos
+- **v0.11.0** (checkpoint actual) — modos al inicio: **Registrar** (edicion completa)
+  y **Ver mapa** (RA solo-lectura, sin debug ni controles de edicion, lista de solo lectura).
+  Sesion WebXR propia sin ARButton; guards de solo-lectura en colocar/crear/borrar.
+- **v0.10.0** (`b2e8564`) — caminos A->B: eliges dos marcadores en Mis globos
   y creas un camino ("Sala -> Cocina") que editas con way trackers; una linea 3D por camino,
   chip de camino en edicion en el HUD, lista en secciones Caminos/Marcadores. Persistencia v2
   (globs + caminos en `argps.v1`) con migracion de datos v0.9.0 a "Camino 1". Borrar un extremo

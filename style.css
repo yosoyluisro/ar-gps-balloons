@@ -294,36 +294,47 @@ button { font-family: inherit; }
   background: #fff;
   border-radius: 10px;
 }
-#enter-ar { margin-top: 8px; }
-.card.small { padding: 18px 16px; }
-
-/* ARButton inyecta estilos inline; los anulamos. Cubre <button> y <a>. */
-#enter-ar button, #enter-ar a {
-  width: 100% !important;
-  display: block !important;
-  position: relative !important;
-  top: auto !important;
-  bottom: auto !important;
-  left: auto !important;
-  right: auto !important;
-  z-index: auto !important;
-  margin: 0 !important;
-  cursor: pointer !important;
-  opacity: 1 !important;
-
-  background: var(--grad);
-  color: #001018;
-  font-weight: 700;
-  font-size: 16px;
+#enter-modes {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 8px;
+}
+#enter-modes button {
+  width: 100%;
+  padding: 14px;
   border: none;
   border-radius: 12px;
-  padding: 14px;
+  background: var(--grad);
+  color: #001018;
+  font-weight: 800;
+  font-size: 16px;
   text-align: center;
-  text-decoration: none;
+  cursor: pointer;
 }
-#enter-ar button.ar-off, #enter-ar a.ar-off {
-  opacity: 0.6 !important;
-  cursor: default !important;
+#enter-modes button small {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  opacity: 0.75;
+  margin-top: 3px;
+}
+#btn-mode-ver {
+  background: rgba(13, 17, 34, 0.9);
+  color: var(--txt);
+  border: 1px solid var(--line);
+}
+#enter-modes button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* modo ver: solo lectura, sin controles de edicion */
+.modo-ver #btn-add,
+.modo-ver #btn-way,
+.modo-ver #path-chip,
+.modo-ver #overlay-label {
+  display: none !important;
 }
 
 /* toast */
